@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "folio",
+  "version": "1.0",
+  "description": "Transform web pages into beautiful magazine-style reading experiences",
+
+  "icons": {
+    "48": "icons/border-48.png"
+  },
+
+  "action": {
+    "default_icon": "icons/border-48.png",
+    "default_title": "Toggle Reader Mode"
+  },
+
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+
+  "host_permissions": [
+    "<all_urls>"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  }
+}
+  
