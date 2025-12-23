@@ -73,7 +73,7 @@ function pickRandom(array) {
   return array[Math.floor(Math.random() * array.length)];
 }
 
-function generateRandomTheme() {
+function generateRandomTheme(preserveSettings = false) {
   const bg = pickRandom(themeElements.backgrounds);
   const text = pickRandom(themeElements.textColors);
   const accent = pickRandom(themeElements.accentColors);
@@ -105,7 +105,12 @@ function generateRandomTheme() {
     excerptColor: excerptColor,
     decorationColor: decorationColor,
     pageNumberColor: pageNumberColor,
-    borderStyle: `${borderStyle} ${accent}`
+    borderStyle: `${borderStyle} ${accent}`,
+    // User preferences - preserve current values when shuffling, or use defaults
+    fontSizeMultiplier: preserveSettings && currentTheme ? currentTheme.fontSizeMultiplier : 1.0,
+    columnCount: preserveSettings && currentTheme ? currentTheme.columnCount : 4,
+    lineHeight: preserveSettings && currentTheme ? currentTheme.lineHeight : 1.58,
+    viewportWidthPercent: preserveSettings && currentTheme ? currentTheme.viewportWidthPercent : 1.0
   };
 }
 
@@ -797,7 +802,8 @@ const magazineCSS = `
 `;
 
 function pickRandomTheme() {
-  currentTheme = generateRandomTheme();
+  // Preserve user settings when generating new theme
+  currentTheme = generateRandomTheme(true);
   return currentTheme;
 }
 
@@ -820,6 +826,25 @@ function applyTheme(theme) {
   container.style.setProperty('--page-number-color', theme.pageNumberColor);
   container.style.setProperty('--border-style', theme.borderStyle);
 
+  // Apply user preferences
+  if (theme.fontSizeMultiplier !== undefined) {
+    fontSizeMultiplier = theme.fontSizeMultiplier;
+  }
+  if (theme.columnCount !== undefined) {
+    columnCount = theme.columnCount;
+  }
+  if (theme.lineHeight !== undefined) {
+    lineHeight = theme.lineHeight;
+  }
+  if (theme.viewportWidthPercent !== undefined) {
+    viewportWidthPercent = theme.viewportWidthPercent;
+    const contentWrapper = document.getElementById('folio-content-wrapper');
+    if (contentWrapper) {
+      contentWrapper.style.maxWidth = `${viewportWidthPercent * 100}%`;
+    }
+  }
+
+  currentTheme = theme;
   console.log(`Applied theme: ${theme.name}`);
 }
 
@@ -1059,6 +1084,12 @@ function handleMouseMove(e) {
 function changeFontSize(delta) {
   fontSizeMultiplier = Math.max(0.7, Math.min(1.5, fontSizeMultiplier + delta));
 
+  // Update and save theme with new setting
+  if (currentTheme) {
+    currentTheme.fontSizeMultiplier = fontSizeMultiplier;
+    saveTheme(currentTheme);
+  }
+
   // Rebuild pages with new font size
   if (articleContent) {
     rebuildPages();
@@ -1068,6 +1099,12 @@ function changeFontSize(delta) {
 function changeColumnCount(delta) {
   columnCount = Math.max(2, Math.min(6, columnCount + delta));
 
+  // Update and save theme with new setting
+  if (currentTheme) {
+    currentTheme.columnCount = columnCount;
+    saveTheme(currentTheme);
+  }
+
   // Rebuild pages with new column count
   if (articleContent) {
     rebuildPages();
@@ -1076,6 +1113,12 @@ function changeColumnCount(delta) {
 
 function changeLineHeight(delta) {
   lineHeight = Math.max(1.3, Math.min(2.0, lineHeight + delta));
+
+  // Update and save theme with new setting
+  if (currentTheme) {
+    currentTheme.lineHeight = lineHeight;
+    saveTheme(currentTheme);
+  }
 
   // Rebuild pages with new line height
   if (articleContent) {
@@ -1090,6 +1133,12 @@ function changeViewportWidth(percent) {
   const contentWrapper = document.getElementById('folio-content-wrapper');
   if (contentWrapper) {
     contentWrapper.style.maxWidth = `${viewportWidthPercent * 100}%`;
+  }
+
+  // Update and save theme with new setting
+  if (currentTheme) {
+    currentTheme.viewportWidthPercent = viewportWidthPercent;
+    saveTheme(currentTheme);
   }
 
   // Rebuild pages with new width
