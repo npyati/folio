@@ -10,6 +10,7 @@ let articleContent = null;
 let columnGap = 30;
 let lineHeight = 1.58;
 let columnCount = 4;
+let viewportWidthPercent = 1.0;
 
 const magazineCSS = `
   @import url('https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
@@ -23,6 +24,16 @@ const magazineCSS = `
     background: #f9f9f9;
     overflow: hidden;
     z-index: 2147483647;
+    display: flex;
+    justify-content: center;
+  }
+
+  #folio-content-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    background: #f9f9f9;
   }
 
   .folio-pages-wrapper {
@@ -387,6 +398,58 @@ const magazineCSS = `
     color: #ffffff;
   }
 
+  .folio-width-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .folio-width-label {
+    font-family: 'Crimson Text', Georgia, serif;
+    font-size: 12px;
+    color: #000000;
+    white-space: nowrap;
+  }
+
+  .folio-width-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100px;
+    height: 4px;
+    background: #e0e0e0;
+    outline: none;
+    border-radius: 2px;
+  }
+
+  .folio-width-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #000000;
+    cursor: pointer;
+    border-radius: 0;
+    transition: background 0.2s ease;
+  }
+
+  .folio-width-slider::-webkit-slider-thumb:hover {
+    background: #333333;
+  }
+
+  .folio-width-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #000000;
+    cursor: pointer;
+    border-radius: 0;
+    border: none;
+    transition: background 0.2s ease;
+  }
+
+  .folio-width-slider::-moz-range-thumb:hover {
+    background: #333333;
+  }
+
   @media (max-width: 1400px) {
     .folio-page-content {
       column-count: 2;
@@ -414,6 +477,135 @@ const magazineCSS = `
       height: 350px;
       border-right: none;
       border-bottom: 3px double #333;
+    }
+
+    .folio-nav {
+      gap: 15px;
+    }
+
+    .folio-nav-btn {
+      padding: 6px 12px;
+      min-width: 38px;
+      font-size: 16px;
+    }
+
+    .folio-font-controls {
+      gap: 6px;
+    }
+
+    .folio-font-btn, .folio-fullscreen-btn {
+      padding: 5px 10px;
+      min-width: 32px;
+      font-size: 14px;
+    }
+
+    .folio-page-indicator {
+      min-width: 85px;
+      font-size: 12px;
+    }
+
+    .folio-close-btn {
+      right: 15px;
+      padding: 5px 10px;
+      min-width: 32px;
+      font-size: 16px;
+    }
+  }
+
+  @media (max-width: 800px) {
+    .folio-nav {
+      gap: 10px;
+      padding: 0 10px;
+    }
+
+    .folio-nav-btn {
+      padding: 5px 10px;
+      min-width: 32px;
+      font-size: 15px;
+    }
+
+    .folio-font-controls {
+      gap: 4px;
+    }
+
+    .folio-font-btn, .folio-fullscreen-btn {
+      padding: 4px 8px;
+      min-width: 28px;
+      font-size: 13px;
+    }
+
+    .folio-page-indicator {
+      min-width: 70px;
+      font-size: 11px;
+    }
+
+    .folio-close-btn {
+      right: 10px;
+      padding: 4px 8px;
+      min-width: 28px;
+      font-size: 15px;
+    }
+
+    /* Hide line height controls on medium-small screens */
+    .folio-font-controls.line-controls {
+      display: none;
+    }
+
+    .folio-width-slider {
+      width: 80px;
+    }
+
+    .folio-width-label {
+      font-size: 11px;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .folio-nav {
+      gap: 8px;
+      padding: 0 5px;
+    }
+
+    .folio-nav-btn {
+      padding: 4px 8px;
+      min-width: 28px;
+      font-size: 14px;
+    }
+
+    .folio-font-controls {
+      gap: 3px;
+    }
+
+    .folio-font-btn, .folio-fullscreen-btn {
+      padding: 3px 6px;
+      min-width: 24px;
+      font-size: 12px;
+    }
+
+    .folio-page-indicator {
+      min-width: 60px;
+      font-size: 10px;
+    }
+
+    .folio-close-btn {
+      right: 5px;
+      padding: 3px 6px;
+      min-width: 24px;
+      font-size: 14px;
+    }
+
+    /* Hide column and line controls on small screens */
+    .folio-font-controls.column-controls,
+    .folio-font-controls.line-controls {
+      display: none;
+    }
+
+    .folio-fullscreen-btn {
+      display: none;
+    }
+
+    .folio-width-control {
+      display: none;
     }
   }
 `;
@@ -674,6 +866,21 @@ function changeLineHeight(delta) {
   }
 }
 
+function changeViewportWidth(percent) {
+  viewportWidthPercent = Math.max(0.5, Math.min(1.0, percent));
+
+  // Update the content wrapper width
+  const contentWrapper = document.getElementById('folio-content-wrapper');
+  if (contentWrapper) {
+    contentWrapper.style.maxWidth = `${viewportWidthPercent * 100}%`;
+  }
+
+  // Rebuild pages with new width
+  if (articleContent) {
+    rebuildPages();
+  }
+}
+
 function rebuildPages() {
   const container = document.getElementById('folio-reader-container');
   const wrapper = container.querySelector('.folio-pages-wrapper');
@@ -827,6 +1034,11 @@ function activateReaderMode() {
   styleElement.textContent = magazineCSS;
   container.appendChild(styleElement);
 
+  // Create content wrapper
+  const contentWrapper = document.createElement('div');
+  contentWrapper.id = 'folio-content-wrapper';
+  contentWrapper.style.maxWidth = `${viewportWidthPercent * 100}%`;
+
   // Create header
   const headerOverlay = document.createElement('div');
   headerOverlay.className = 'folio-header-overlay';
@@ -850,12 +1062,12 @@ function activateReaderMode() {
     headerOverlay.appendChild(excerpt);
   }
 
-  container.appendChild(headerOverlay);
+  contentWrapper.appendChild(headerOverlay);
 
   // Create pages wrapper
   const pagesWrapper = document.createElement('div');
   pagesWrapper.className = 'folio-pages-wrapper';
-  container.appendChild(pagesWrapper);
+  contentWrapper.appendChild(pagesWrapper);
 
   // Create navigation
   const nav = document.createElement('div');
@@ -903,7 +1115,7 @@ function activateReaderMode() {
   nav.appendChild(fontControls);
 
   const columnControls = document.createElement('div');
-  columnControls.className = 'folio-font-controls';
+  columnControls.className = 'folio-font-controls column-controls';
 
   const decreaseColumnBtn = document.createElement('button');
   decreaseColumnBtn.className = 'folio-font-btn';
@@ -922,7 +1134,7 @@ function activateReaderMode() {
   nav.appendChild(columnControls);
 
   const lineControls = document.createElement('div');
-  lineControls.className = 'folio-font-controls';
+  lineControls.className = 'folio-font-controls line-controls';
 
   const decreaseLineBtn = document.createElement('button');
   decreaseLineBtn.className = 'folio-font-btn';
@@ -940,6 +1152,26 @@ function activateReaderMode() {
 
   nav.appendChild(lineControls);
 
+  const widthControl = document.createElement('div');
+  widthControl.className = 'folio-width-control';
+
+  const widthLabel = document.createElement('span');
+  widthLabel.className = 'folio-width-label';
+  widthLabel.textContent = 'Width';
+  widthControl.appendChild(widthLabel);
+
+  const widthSlider = document.createElement('input');
+  widthSlider.type = 'range';
+  widthSlider.className = 'folio-width-slider';
+  widthSlider.min = '50';
+  widthSlider.max = '100';
+  widthSlider.value = '100';
+  widthSlider.title = 'Adjust Viewing Width';
+  widthSlider.oninput = (e) => changeViewportWidth(parseInt(e.target.value) / 100);
+  widthControl.appendChild(widthSlider);
+
+  nav.appendChild(widthControl);
+
   const fullscreenBtn = document.createElement('button');
   fullscreenBtn.id = 'folio-fullscreen-btn';
   fullscreenBtn.className = 'folio-fullscreen-btn';
@@ -955,7 +1187,10 @@ function activateReaderMode() {
   closeBtn.onclick = deactivateReaderMode;
   nav.appendChild(closeBtn);
 
-  container.appendChild(nav);
+  contentWrapper.appendChild(nav);
+
+  // Append content wrapper to container
+  container.appendChild(contentWrapper);
 
   // Create lightbox
   const lightbox = document.createElement('div');
@@ -1061,6 +1296,7 @@ function deactivateReaderMode() {
   columnGap = 30;
   lineHeight = 1.58;
   columnCount = 4;
+  viewportWidthPercent = 1.0;
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
