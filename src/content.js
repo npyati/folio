@@ -11,9 +11,122 @@ let columnGap = 30;
 let lineHeight = 1.58;
 let columnCount = 4;
 let viewportWidthPercent = 1.0;
+let currentTheme = null;
+let allImages = [];
+let currentLightboxIndex = 0;
+
+// Design element pools for generative combinations
+const themeElements = {
+  backgrounds: [
+    '#ffffff', '#fefefe', '#fafafa', '#f9f9f9', '#f5f5f5',
+    '#f5f1e8', '#faf7f0', '#fff8f0', '#f8f9fa', '#f4f6f8',
+    '#0a0a0a', '#1c1c1e', '#1a1a1a', '#2a2a2a',
+    '#fff5eb', '#fef3e2', '#f0e6d2'
+  ],
+
+  textColors: [
+    '#000000', '#1a1a1a', '#2a2419', '#3c3530', '#3e3330',
+    '#2b3e50', '#1e3a52', '#333333', '#2f2f2f',
+    '#e8e8e8', '#d4c5a0', '#f5f5f5', '#cccccc'
+  ],
+
+  accentColors: [
+    '#8b6b47', '#a04f3c', '#ff6b35', '#4a90a4', '#c9a961',
+    '#d4684f', '#2e5c7a', '#c24f38', '#7a5c47', '#b39958',
+    '#5a7f8c', '#e89b7e', '#c9a97a', '#d4a574', '#b8d4e0'
+  ],
+
+  titleFonts: [
+    "'Playfair Display', Georgia, serif",
+    "'Georgia', serif",
+    "'Libre Caslon Text', Georgia, serif",
+    "'Helvetica Neue', Arial, sans-serif",
+    "'Futura', 'Trebuchet MS', sans-serif",
+    "'Times New Roman', Times, serif",
+    "'Baskerville', 'Libre Baskerville', serif"
+  ],
+
+  bodyFonts: [
+    "'Libre Caslon Text', Georgia, serif",
+    "'Georgia', serif",
+    "'Garamond', 'Libre Baskerville', serif",
+    "'Charter', 'Bitstream Charter', serif",
+    "'Iowan Old Style', 'Palatino Linotype', serif",
+    "'Hoefler Text', 'Baskerville Old Face', serif"
+  ],
+
+  titleSizes: ['2.4em', '2.6em', '2.8em', '3em', '3.2em', '3.4em', '3.6em', '4em'],
+
+  titleWeights: ['300', '400', '600', '700', '800', '900'],
+
+  borderStyles: [
+    '1px solid',
+    '2px solid',
+    '3px solid',
+    '2px double',
+    '3px double',
+    '1px dashed'
+  ]
+};
+
+function pickRandom(array) {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
+function generateRandomTheme() {
+  const bg = pickRandom(themeElements.backgrounds);
+  const text = pickRandom(themeElements.textColors);
+  const accent = pickRandom(themeElements.accentColors);
+  const titleFont = pickRandom(themeElements.titleFonts);
+  const bodyFont = pickRandom(themeElements.bodyFonts);
+  const titleSize = pickRandom(themeElements.titleSizes);
+  const titleWeight = pickRandom(themeElements.titleWeights);
+  const borderStyle = pickRandom(themeElements.borderStyles);
+
+  // Ensure good contrast
+  const isDarkBg = bg.startsWith('#0') || bg.startsWith('#1') || bg.startsWith('#2');
+  const titleColor = isDarkBg ? (text.startsWith('#e') || text.startsWith('#d') || text.startsWith('#f') ? text : '#f5f5f5') : text;
+  const bylineColor = accent;
+  const excerptColor = text;
+  const decorationColor = accent;
+  const pageNumberColor = accent;
+
+  return {
+    name: `Generated ${Date.now()}`,
+    background: bg,
+    textColor: text,
+    accentColor: accent,
+    titleFont: titleFont,
+    bodyFont: bodyFont,
+    titleSize: titleSize,
+    titleWeight: titleWeight,
+    titleColor: titleColor,
+    bylineColor: bylineColor,
+    excerptColor: excerptColor,
+    decorationColor: decorationColor,
+    pageNumberColor: pageNumberColor,
+    borderStyle: `${borderStyle} ${accent}`
+  };
+}
 
 const magazineCSS = `
   @import url('https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
+  :root {
+    --bg-color: #f9f9f9;
+    --text-color: #000000;
+    --accent-color: #2C5F6F;
+    --title-font: 'Playfair Display', Georgia, serif;
+    --body-font: 'Libre Caslon Text', Georgia, serif;
+    --title-size: 2.8em;
+    --title-weight: 700;
+    --title-color: #2C5F6F;
+    --byline-color: #666666;
+    --excerpt-color: #555555;
+    --decoration-color: #2C5F6F;
+    --page-number-color: #2C5F6F;
+    --border-style: 2px solid #e0e0e0;
+  }
 
   #folio-reader-container {
     position: fixed;
@@ -21,11 +134,12 @@ const magazineCSS = `
     left: 0;
     right: 0;
     bottom: 0;
-    background: #f9f9f9;
+    background: var(--bg-color);
     overflow: hidden;
     z-index: 2147483647;
     display: flex;
     justify-content: center;
+    transition: background 0.3s ease;
   }
 
   #folio-content-wrapper {
@@ -33,7 +147,8 @@ const magazineCSS = `
     width: 100%;
     max-width: 100%;
     height: 100%;
-    background: #f9f9f9;
+    background: var(--bg-color);
+    transition: background 0.3s ease;
   }
 
   .folio-pages-wrapper {
@@ -68,100 +183,68 @@ const magazineCSS = `
     column-count: 4;
     column-gap: 30px;
     column-fill: auto;
-    font-family: 'Libre Caslon Text', Georgia, serif;
-    color: #000000;
+    font-family: var(--body-font);
+    color: var(--text-color);
     line-height: 1.58;
     font-size: 1.05em;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
-  }
-
-  .folio-page.first-page {
-    padding-left: calc(35% + 60px);
-  }
-
-  .folio-page.first-page .folio-page-content {
-    column-count: 3;
-  }
-
-  .folio-page-decoration {
-    position: absolute;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 65%;
-    height: 2px;
-    background: #2C5F6F;
-    opacity: 0.7;
+    transition: color 0.3s ease, font-family 0.3s ease;
   }
 
   .folio-page-number {
     position: absolute;
-    bottom: 10px;
+    bottom: 3px;
     left: 50%;
     transform: translateX(-50%);
-    font-family: 'Playfair Display', Georgia, serif;
+    font-family: var(--title-font);
     font-size: 0.85em;
-    color: #2C5F6F;
+    color: var(--page-number-color);
     font-weight: 400;
     letter-spacing: 0.05em;
+    transition: color 0.3s ease, font-family 0.3s ease;
   }
 
-  .folio-header-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 35%;
-    height: calc(100% - 60px);
-    background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-    padding: 50px 40px 50px 60px;
-    box-sizing: border-box;
-    z-index: 10;
-    border-right: 2px solid #cccccc;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    opacity: 1;
-    transition: opacity 0.35s ease;
-    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.05);
+  .folio-article-title {
+    font-family: var(--title-font);
+    font-size: var(--title-size);
+    font-weight: var(--title-weight);
+    line-height: 1.15;
+    margin: 0 0 0.4em 0;
+    color: var(--title-color);
+    letter-spacing: -0.02em;
+    text-align: center;
+    column-span: all;
+    break-after: avoid;
+    transition: color 0.3s ease, font-family 0.3s ease, font-size 0.3s ease, font-weight 0.3s ease;
   }
 
-  .folio-header-overlay.hidden {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .folio-title {
-    font-family: 'Playfair Display', Georgia, serif;
-    font-size: 2.5em;
-    font-weight: 700;
-    line-height: 1.2;
-    margin: 0 0 20px 0;
-    padding-bottom: 18px;
-    color: #2C5F6F;
-    letter-spacing: -0.01em;
-    border-bottom: 2px solid #2C5F6F;
-  }
-
-  .folio-byline {
-    font-size: 0.85em;
-    color: #666666;
+  .folio-article-byline {
+    font-size: 0.9em;
+    color: var(--byline-color);
     font-style: italic;
-    margin: 16px 0;
+    margin: 0 0 0.8em 0;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+    text-align: center;
+    column-span: all;
+    break-after: avoid;
+    transition: color 0.3s ease;
   }
 
-  .folio-excerpt {
-    font-size: 1.1em;
+  .folio-article-excerpt {
+    font-size: 1.15em;
     line-height: 1.6;
-    color: #555555;
-    margin: 24px 0 0 0;
+    color: var(--excerpt-color);
+    margin: 0 0 2em 0;
     font-weight: 400;
     font-style: italic;
-    padding-left: 20px;
-    border-left: 2px solid #cccccc;
+    text-align: center;
+    column-span: all;
+    padding-bottom: 1em;
+    border-bottom: var(--border-style);
+    transition: color 0.3s ease, border-bottom 0.3s ease;
   }
 
   .folio-page-content p {
@@ -225,6 +308,7 @@ const magazineCSS = `
     background: rgba(0, 0, 0, 0);
     z-index: 2147483649;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     cursor: pointer;
@@ -233,23 +317,138 @@ const magazineCSS = `
   }
 
   .folio-lightbox.active {
-    background: rgba(0, 0, 0, 0.9);
+    background: rgba(0, 0, 0, 0.95);
     visibility: visible;
     transition: background 0.3s ease, visibility 0s linear;
   }
 
+  .folio-lightbox-main {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    width: 100%;
+    cursor: default;
+  }
+
   .folio-lightbox-img {
-    max-width: 90%;
-    max-height: 90%;
+    max-width: 85%;
+    max-height: 85vh;
     object-fit: contain;
     box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
     transform: scale(0.8);
     opacity: 0;
     transition: transform 0.3s ease, opacity 0.3s ease;
+    cursor: default;
   }
 
   .folio-lightbox.active .folio-lightbox-img {
     transform: scale(1);
+    opacity: 1;
+  }
+
+  .folio-lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #ffffff;
+    font-size: 32px;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    user-select: none;
+  }
+
+  .folio-lightbox-nav:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .folio-lightbox-nav.prev {
+    left: 20px;
+  }
+
+  .folio-lightbox-nav.next {
+    right: 20px;
+  }
+
+  .folio-lightbox-nav:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .folio-lightbox-thumbnails {
+    display: flex;
+    gap: 10px;
+    padding: 20px;
+    max-width: 90%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    cursor: default;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  .folio-lightbox.active .folio-lightbox-thumbnails {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .folio-lightbox-thumbnails::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .folio-lightbox-thumbnails::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .folio-lightbox-thumbnails::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+  }
+
+  .folio-lightbox-thumbnail {
+    flex-shrink: 0;
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.2s ease, opacity 0.2s ease;
+    opacity: 0.6;
+  }
+
+  .folio-lightbox-thumbnail:hover {
+    opacity: 1;
+  }
+
+  .folio-lightbox-thumbnail.active {
+    border-color: #ffffff;
+    opacity: 1;
+  }
+
+  .folio-lightbox-counter {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: monospace;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .folio-lightbox.active .folio-lightbox-counter {
     opacity: 1;
   }
 
@@ -466,19 +665,6 @@ const magazineCSS = `
       padding: 50px 60px;
     }
 
-    .folio-page.first-page {
-      padding-left: 60px;
-      padding-top: 400px;
-    }
-
-    .folio-header-overlay {
-      position: static;
-      width: 100%;
-      height: 350px;
-      border-right: none;
-      border-bottom: 3px double #333;
-    }
-
     .folio-nav {
       gap: 15px;
     }
@@ -610,6 +796,60 @@ const magazineCSS = `
   }
 `;
 
+function pickRandomTheme() {
+  currentTheme = generateRandomTheme();
+  return currentTheme;
+}
+
+function applyTheme(theme) {
+  const container = document.getElementById('folio-reader-container');
+  if (!container) return;
+
+  // Apply theme using CSS custom properties
+  container.style.setProperty('--bg-color', theme.background);
+  container.style.setProperty('--text-color', theme.textColor);
+  container.style.setProperty('--accent-color', theme.accentColor);
+  container.style.setProperty('--title-font', theme.titleFont);
+  container.style.setProperty('--body-font', theme.bodyFont);
+  container.style.setProperty('--title-size', theme.titleSize);
+  container.style.setProperty('--title-weight', theme.titleWeight);
+  container.style.setProperty('--title-color', theme.titleColor);
+  container.style.setProperty('--byline-color', theme.bylineColor);
+  container.style.setProperty('--excerpt-color', theme.excerptColor);
+  container.style.setProperty('--decoration-color', theme.decorationColor);
+  container.style.setProperty('--page-number-color', theme.pageNumberColor);
+  container.style.setProperty('--border-style', theme.borderStyle);
+
+  console.log(`Applied theme: ${theme.name}`);
+}
+
+function shuffleTheme() {
+  const newTheme = pickRandomTheme();
+  applyTheme(newTheme);
+  saveTheme(newTheme);
+}
+
+function saveTheme(theme) {
+  // Save theme to chrome storage
+  chrome.storage.local.set({ folioTheme: theme }, () => {
+    console.log('Theme saved to storage');
+  });
+}
+
+function loadTheme(callback) {
+  chrome.storage.local.get(['folioTheme'], (result) => {
+    if (result.folioTheme) {
+      console.log('Loaded saved theme from storage');
+      callback(result.folioTheme);
+    } else {
+      console.log('No saved theme, generating new one');
+      const newTheme = pickRandomTheme();
+      saveTheme(newTheme);
+      callback(newTheme);
+    }
+  });
+}
+
 function splitContentIntoPages(content, container) {
   const wrapper = container.querySelector('.folio-pages-wrapper');
   if (!wrapper) return [];
@@ -617,30 +857,29 @@ function splitContentIntoPages(content, container) {
   // Create a temporary div to parse the content
   const contentParser = document.createElement('div');
   contentParser.innerHTML = content;
-  const elements = Array.from(contentParser.querySelectorAll('p, h2, h3, blockquote, ul, ol, img'));
+  const elements = Array.from(contentParser.querySelectorAll('h1, h2, h3, p, blockquote, ul, ol, img, div.folio-article-byline, div.folio-article-excerpt'));
 
   const pages = [];
   let elementIndex = 0;
 
   // Helper function to measure a page
-  function measurePage(isFirstPage) {
+  function measurePage() {
     const tempPage = document.createElement('div');
-    tempPage.className = isFirstPage ? 'folio-page first-page' : 'folio-page';
+    tempPage.className = 'folio-page';
     tempPage.style.visibility = 'hidden';
     tempPage.style.position = 'absolute';
     tempPage.style.left = '-9999px';
 
     const tempMeasure = document.createElement('div');
     tempMeasure.className = 'folio-page-content';
-    // Apply dynamic column count (first page uses one less column to account for header)
-    tempMeasure.style.columnCount = isFirstPage ? Math.max(1, columnCount - 1) : columnCount;
+    tempMeasure.style.columnCount = columnCount;
     tempPage.appendChild(tempMeasure);
     wrapper.appendChild(tempPage);
 
     const availableHeight = tempMeasure.offsetHeight;
     const availableWidth = tempMeasure.offsetWidth;
 
-    console.log(`Page ${pages.length + 1} (${isFirstPage ? 'first' : 'regular'}) dimensions:`, availableWidth, 'x', availableHeight);
+    console.log(`Page ${pages.length + 1} dimensions:`, availableWidth, 'x', availableHeight);
 
     let currentPageContent = '';
 
@@ -664,17 +903,9 @@ function splitContentIntoPages(content, container) {
     return currentPageContent;
   }
 
-  // Measure first page with 2-column layout
-  if (elementIndex < elements.length) {
-    const firstPageContent = measurePage(true);
-    if (firstPageContent) {
-      pages.push(firstPageContent);
-    }
-  }
-
-  // Measure remaining pages with 3-column layout
+  // Measure all pages with same layout
   while (elementIndex < elements.length) {
-    const pageContent = measurePage(false);
+    const pageContent = measurePage();
     if (pageContent) {
       pages.push(pageContent);
     } else {
@@ -703,16 +934,6 @@ function goToPage(pageNum) {
     newPageEl.classList.add('active');
   }
 
-  // Toggle header visibility
-  const header = document.querySelector('.folio-header-overlay');
-  if (header) {
-    if (currentPage === 0) {
-      header.classList.remove('hidden');
-    } else {
-      header.classList.add('hidden');
-    }
-  }
-
   updateNavigation();
 }
 
@@ -737,6 +958,18 @@ function handleKeyPress(e) {
       closeLightbox();
       return;
     }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      navigateLightbox(-1);
+      return;
+    }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      navigateLightbox(1);
+      return;
+    }
+    // Don't handle other keys when lightbox is open
+    return;
   }
 
   switch(e.key) {
@@ -826,22 +1059,6 @@ function handleMouseMove(e) {
 function changeFontSize(delta) {
   fontSizeMultiplier = Math.max(0.7, Math.min(1.5, fontSizeMultiplier + delta));
 
-  // Apply font size to header elements
-  const title = document.querySelector('.folio-title');
-  if (title) {
-    title.style.fontSize = `${2.5 * fontSizeMultiplier}em`;
-  }
-
-  const byline = document.querySelector('.folio-byline');
-  if (byline) {
-    byline.style.fontSize = `${0.85 * fontSizeMultiplier}em`;
-  }
-
-  const excerpt = document.querySelector('.folio-excerpt');
-  if (excerpt) {
-    excerpt.style.fontSize = `${1.1 * fontSizeMultiplier}em`;
-  }
-
   // Rebuild pages with new font size
   if (articleContent) {
     rebuildPages();
@@ -911,22 +1128,16 @@ function rebuildPages() {
   pages.forEach((pageContent, index) => {
     const pageEl = document.createElement('div');
     pageEl.className = 'folio-page';
-    if (index === 0) pageEl.classList.add('first-page');
 
     const pageContentEl = document.createElement('div');
     pageContentEl.className = 'folio-page-content';
     pageContentEl.style.fontSize = `${1.05 * fontSizeMultiplier}em`;
     pageContentEl.style.columnGap = `${columnGap}px`;
     pageContentEl.style.lineHeight = lineHeight;
-    pageContentEl.style.columnCount = index === 0 ? Math.max(1, columnCount - 1) : columnCount;
+    pageContentEl.style.columnCount = columnCount;
     pageContentEl.innerHTML = pageContent;
 
     pageEl.appendChild(pageContentEl);
-
-    // Add decorative line
-    const decoration = document.createElement('div');
-    decoration.className = 'folio-page-decoration';
-    pageEl.appendChild(decoration);
 
     // Add page number
     const pageNumber = document.createElement('div');
@@ -949,13 +1160,33 @@ function rebuildPages() {
   addImageClickHandlers();
 }
 
-function showImageLightbox(imgSrc) {
+function showImageLightbox(index) {
+  currentLightboxIndex = index;
   const lightbox = document.getElementById('folio-lightbox');
   const lightboxImg = document.getElementById('folio-lightbox-img');
+  const prevBtn = document.getElementById('folio-lightbox-prev');
+  const nextBtn = document.getElementById('folio-lightbox-next');
+  const counter = document.getElementById('folio-lightbox-counter');
 
-  if (lightbox && lightboxImg) {
-    lightboxImg.src = imgSrc;
+  if (lightbox && lightboxImg && allImages.length > 0) {
+    lightboxImg.src = allImages[index];
     lightbox.classList.add('active');
+
+    // Update counter
+    if (counter) {
+      counter.textContent = `${index + 1} / ${allImages.length}`;
+    }
+
+    // Update prev/next buttons
+    if (prevBtn) {
+      prevBtn.disabled = index === 0;
+    }
+    if (nextBtn) {
+      nextBtn.disabled = index === allImages.length - 1;
+    }
+
+    // Update thumbnail highlights
+    updateThumbnailHighlight(index);
   }
 }
 
@@ -966,14 +1197,52 @@ function closeLightbox() {
   }
 }
 
+function navigateLightbox(direction) {
+  const newIndex = currentLightboxIndex + direction;
+  if (newIndex >= 0 && newIndex < allImages.length) {
+    showImageLightbox(newIndex);
+  }
+}
+
+function updateThumbnailHighlight(index) {
+  const thumbnails = document.querySelectorAll('.folio-lightbox-thumbnail');
+  thumbnails.forEach((thumb, i) => {
+    if (i === index) {
+      thumb.classList.add('active');
+      // Scroll thumbnail into view
+      thumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    } else {
+      thumb.classList.remove('active');
+    }
+  });
+}
+
 function addImageClickHandlers() {
   const images = document.querySelectorAll('.folio-page-content img');
-  images.forEach(img => {
+  allImages = Array.from(images).map(img => img.src);
+
+  images.forEach((img, index) => {
     img.onclick = (e) => {
       e.stopPropagation();
-      showImageLightbox(img.src);
+      showImageLightbox(index);
     };
   });
+
+  // Populate lightbox thumbnails
+  const thumbnailsContainer = document.getElementById('folio-lightbox-thumbnails');
+  if (thumbnailsContainer) {
+    thumbnailsContainer.innerHTML = '';
+    allImages.forEach((src, index) => {
+      const thumbnail = document.createElement('img');
+      thumbnail.src = src;
+      thumbnail.className = 'folio-lightbox-thumbnail';
+      thumbnail.onclick = (e) => {
+        e.stopPropagation();
+        showImageLightbox(index);
+      };
+      thumbnailsContainer.appendChild(thumbnail);
+    });
+  }
 }
 
 function toggleFullscreen() {
@@ -1039,30 +1308,17 @@ function activateReaderMode() {
   contentWrapper.id = 'folio-content-wrapper';
   contentWrapper.style.maxWidth = `${viewportWidthPercent * 100}%`;
 
-  // Create header
-  const headerOverlay = document.createElement('div');
-  headerOverlay.className = 'folio-header-overlay';
-
-  const title = document.createElement('h1');
-  title.className = 'folio-title';
-  title.textContent = article.title;
-  headerOverlay.appendChild(title);
-
+  // Prepend title, byline, and excerpt to article content
+  let headerHTML = '';
+  if (article.title) {
+    headerHTML += `<h1 class="folio-article-title">${article.title}</h1>`;
+  }
   if (article.byline) {
-    const byline = document.createElement('div');
-    byline.className = 'folio-byline';
-    byline.textContent = article.byline;
-    headerOverlay.appendChild(byline);
+    headerHTML += `<div class="folio-article-byline">${article.byline}</div>`;
   }
-
   if (article.excerpt) {
-    const excerpt = document.createElement('div');
-    excerpt.className = 'folio-excerpt';
-    excerpt.textContent = article.excerpt;
-    headerOverlay.appendChild(excerpt);
+    headerHTML += `<div class="folio-article-excerpt">${article.excerpt}</div>`;
   }
-
-  contentWrapper.appendChild(headerOverlay);
 
   // Create pages wrapper
   const pagesWrapper = document.createElement('div');
@@ -1172,6 +1428,14 @@ function activateReaderMode() {
 
   nav.appendChild(widthControl);
 
+  const shuffleBtn = document.createElement('button');
+  shuffleBtn.id = 'folio-shuffle-btn';
+  shuffleBtn.className = 'folio-fullscreen-btn';
+  shuffleBtn.textContent = '🎨';
+  shuffleBtn.title = 'Shuffle Theme';
+  shuffleBtn.onclick = shuffleTheme;
+  nav.appendChild(shuffleBtn);
+
   const fullscreenBtn = document.createElement('button');
   fullscreenBtn.id = 'folio-fullscreen-btn';
   fullscreenBtn.className = 'folio-fullscreen-btn';
@@ -1187,10 +1451,11 @@ function activateReaderMode() {
   closeBtn.onclick = deactivateReaderMode;
   nav.appendChild(closeBtn);
 
-  contentWrapper.appendChild(nav);
-
   // Append content wrapper to container
   container.appendChild(contentWrapper);
+
+  // Append nav to container (not contentWrapper) so it stays full width
+  container.appendChild(nav);
 
   // Create lightbox
   const lightbox = document.createElement('div');
@@ -1198,25 +1463,72 @@ function activateReaderMode() {
   lightbox.className = 'folio-lightbox';
   lightbox.onclick = closeLightbox;
 
+  // Main image container
+  const lightboxMain = document.createElement('div');
+  lightboxMain.className = 'folio-lightbox-main';
+
+  // Previous button
+  const lightboxPrevBtn = document.createElement('button');
+  lightboxPrevBtn.id = 'folio-lightbox-prev';
+  lightboxPrevBtn.className = 'folio-lightbox-nav prev';
+  lightboxPrevBtn.textContent = '‹';
+  lightboxPrevBtn.onclick = (e) => {
+    e.stopPropagation();
+    navigateLightbox(-1);
+  };
+  lightboxMain.appendChild(lightboxPrevBtn);
+
+  // Main image
   const lightboxImg = document.createElement('img');
   lightboxImg.id = 'folio-lightbox-img';
   lightboxImg.className = 'folio-lightbox-img';
-  lightboxImg.onclick = (e) => e.stopPropagation(); // Prevent closing when clicking the image itself
+  lightboxImg.onclick = (e) => e.stopPropagation();
+  lightboxMain.appendChild(lightboxImg);
 
-  lightbox.appendChild(lightboxImg);
+  // Next button
+  const lightboxNextBtn = document.createElement('button');
+  lightboxNextBtn.id = 'folio-lightbox-next';
+  lightboxNextBtn.className = 'folio-lightbox-nav next';
+  lightboxNextBtn.textContent = '›';
+  lightboxNextBtn.onclick = (e) => {
+    e.stopPropagation();
+    navigateLightbox(1);
+  };
+  lightboxMain.appendChild(lightboxNextBtn);
+
+  // Counter
+  const lightboxCounter = document.createElement('div');
+  lightboxCounter.id = 'folio-lightbox-counter';
+  lightboxCounter.className = 'folio-lightbox-counter';
+  lightboxMain.appendChild(lightboxCounter);
+
+  lightbox.appendChild(lightboxMain);
+
+  // Thumbnails container
+  const thumbnails = document.createElement('div');
+  thumbnails.id = 'folio-lightbox-thumbnails';
+  thumbnails.className = 'folio-lightbox-thumbnails';
+  thumbnails.onclick = (e) => e.stopPropagation();
+  lightbox.appendChild(thumbnails);
+
   container.appendChild(lightbox);
 
   document.body.innerHTML = '';
   document.body.appendChild(container);
   document.body.style.overflow = 'hidden';
 
+  // Load and apply saved theme (or generate new one if none exists)
+  loadTheme((theme) => {
+    applyTheme(theme);
+  });
+
   readerModeActive = true;
   document.addEventListener('keydown', handleKeyPress);
   document.addEventListener('mousemove', handleMouseMove);
   window.addEventListener('resize', handleResize);
 
-  // Store article content for rebuilding pages
-  articleContent = article.content;
+  // Store article content with header prepended
+  articleContent = headerHTML + article.content;
 
   // Split content into pages
   setTimeout(() => {
@@ -1227,19 +1539,13 @@ function activateReaderMode() {
     pages.forEach((pageContent, index) => {
       const pageEl = document.createElement('div');
       pageEl.className = 'folio-page';
-      if (index === 0) pageEl.classList.add('first-page');
 
       const pageContentEl = document.createElement('div');
       pageContentEl.className = 'folio-page-content';
-      pageContentEl.style.columnCount = index === 0 ? Math.max(1, columnCount - 1) : columnCount;
+      pageContentEl.style.columnCount = columnCount;
       pageContentEl.innerHTML = pageContent;
 
       pageEl.appendChild(pageContentEl);
-
-      // Add decorative line
-      const decoration = document.createElement('div');
-      decoration.className = 'folio-page-decoration';
-      pageEl.appendChild(decoration);
 
       // Add page number
       const pageNumber = document.createElement('div');
@@ -1297,6 +1603,10 @@ function deactivateReaderMode() {
   lineHeight = 1.58;
   columnCount = 4;
   viewportWidthPercent = 1.0;
+  currentTheme = null;
+  allImages = [];
+  currentLightboxIndex = 0;
+  lastThemeIndex = -1;
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
