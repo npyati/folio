@@ -7,6 +7,7 @@ let totalPages = 0;
 let pages = [];
 let fontSizeMultiplier = 1.0;
 let articleContent = null;
+let rawArticle = null; // Store raw Readability API output for debugging
 let columnGap = 30;
 let lineHeight = 1.58;
 let columnCount = 4;
@@ -260,7 +261,11 @@ const magazineCSS = `
     widows: 2;
   }
 
-  .folio-page-content p:first-of-type::first-letter {
+  .folio-page-content p.has-drop-cap {
+    margin-top: 2em;
+  }
+
+  .folio-page-content p.has-drop-cap::first-letter {
     float: left;
     font-size: 4em;
     line-height: 0.9;
@@ -274,21 +279,19 @@ const magazineCSS = `
     font-family: 'Playfair Display', Georgia, serif;
     font-size: 1.6em;
     font-weight: 700;
-    margin: 1.8em 0 0.6em 0;
+    margin: 1.0em 0 0.6em 0;
     color: #1a1a1a;
     letter-spacing: -0.01em;
-    break-after: avoid;
   }
 
   .folio-page-content h3 {
     font-family: 'Playfair Display', Georgia, serif;
     font-size: 1.25em;
     font-weight: 600;
-    margin: 1.4em 0 0.5em 0;
+    margin: 0.8em 0 0.5em 0;
     color: #1a1a1a;
     font-style: italic;
     letter-spacing: -0.005em;
-    break-after: avoid;
   }
 
   .folio-page-content img {
@@ -799,6 +802,108 @@ const magazineCSS = `
       display: none;
     }
   }
+
+  @media print {
+    @page {
+      size: letter;
+      margin: 0.5in;
+    }
+
+    #folio-reader-container {
+      position: static;
+      overflow: visible;
+      background: var(--bg-color);
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    #folio-content-wrapper {
+      position: static;
+      width: 100%;
+      max-width: 100% !important;
+      height: auto;
+      background: var(--bg-color);
+    }
+
+    .folio-pages-wrapper {
+      position: static;
+      overflow: visible;
+      height: auto;
+      display: block;
+      column-count: var(--print-columns, 2);
+      column-gap: 30px;
+    }
+
+    .folio-page {
+      display: contents;
+    }
+
+    .folio-page-content {
+      display: contents;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      color: var(--text-color);
+    }
+
+    .folio-page-content > * {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .folio-article-title {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      color: var(--title-color);
+    }
+
+    .folio-article-byline {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      color: var(--byline-color);
+    }
+
+    .folio-article-excerpt {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      color: var(--excerpt-color);
+      border-bottom: var(--border-style);
+    }
+
+    .folio-page-number {
+      display: none;
+    }
+
+    .folio-page-content blockquote {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      border-left: 2px solid var(--accent-color);
+    }
+
+    .folio-page-content img {
+      max-width: 100%;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      cursor: default;
+    }
+
+    .folio-page-content h2,
+    .folio-page-content h3 {
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+
+    .folio-page-content p {
+      orphans: 3;
+      widows: 3;
+    }
+
+    /* Hide UI elements */
+    .folio-nav,
+    .folio-lightbox,
+    .folio-lightbox-thumbnails {
+      display: none !important;
+    }
+  }
 `;
 
 function pickRandomTheme() {
@@ -875,6 +980,65 @@ function loadTheme(callback) {
   });
 }
 
+// Helper function to split a paragraph across pages
+function splitParagraph(paragraphEl, currentPageContent, tempMeasure, availableHeight, availableWidth) {
+  const fullText = paragraphEl.innerHTML;
+  const words = fullText.split(/(\s+)/); // Split on whitespace but keep the whitespace
+
+  if (words.length <= 1) {
+    // Can't split a single word
+    return null;
+  }
+
+  // Binary search to find how many words fit
+  let left = 0;
+  let right = words.length;
+  let bestFit = 0;
+
+  while (left < right) {
+    const mid = Math.floor((left + right) / 2);
+    const testText = words.slice(0, mid).join('');
+
+    // Test if this amount of text fits
+    const testP = document.createElement('p');
+    if (paragraphEl.className) testP.className = paragraphEl.className;
+    testP.innerHTML = testText;
+
+    tempMeasure.innerHTML = currentPageContent + testP.outerHTML;
+
+    const hasVerticalOverflow = tempMeasure.scrollHeight > availableHeight;
+    const hasHorizontalOverflow = tempMeasure.scrollWidth > availableWidth;
+
+    if (!hasVerticalOverflow && !hasHorizontalOverflow) {
+      // This fits, try to fit more
+      bestFit = mid;
+      left = mid + 1;
+    } else {
+      // This doesn't fit, try less
+      right = mid;
+    }
+  }
+
+  // If we can't fit any words, return null
+  if (bestFit === 0) {
+    return null;
+  }
+
+  // Create the two parts
+  const firstPartText = words.slice(0, bestFit).join('');
+  const remainderText = words.slice(bestFit).join('');
+
+  // Create the HTML for the first part
+  const firstP = document.createElement('p');
+  if (paragraphEl.className) firstP.className = paragraphEl.className;
+  firstP.innerHTML = firstPartText;
+
+  return {
+    firstPart: firstP.outerHTML,
+    remainder: remainderText
+  };
+}
+
 function splitContentIntoPages(content, container) {
   const wrapper = container.querySelector('.folio-pages-wrapper');
   if (!wrapper) return [];
@@ -882,7 +1046,20 @@ function splitContentIntoPages(content, container) {
   // Create a temporary div to parse the content
   const contentParser = document.createElement('div');
   contentParser.innerHTML = content;
-  const elements = Array.from(contentParser.querySelectorAll('h1, h2, h3, p, blockquote, ul, ol, img, div.folio-article-byline, div.folio-article-excerpt'));
+  const allElements = Array.from(contentParser.querySelectorAll('h1, h2, h3, p, blockquote, ul, ol, img, div.folio-article-byline, div.folio-article-excerpt'));
+
+  // Filter out <p> elements that are inside <blockquote> to avoid duplicates
+  const elements = allElements.filter(el => {
+    if (el.tagName === 'P' && el.closest('blockquote')) {
+      return false; // Skip paragraphs inside blockquotes
+    }
+    return true;
+  });
+
+  // Debug: log the structure (commented out to reduce noise)
+  // console.log('Total elements:', elements.length);
+  // console.log('First 10 elements:', elements.slice(0, 10).map(el => `${el.tagName}${el.className ? '.' + el.className : ''}`));
+  // console.log('Content HTML structure:', contentParser.children.length, 'top-level children');
 
   const pages = [];
   let elementIndex = 0;
@@ -893,7 +1070,10 @@ function splitContentIntoPages(content, container) {
     tempPage.className = 'folio-page';
     tempPage.style.visibility = 'hidden';
     tempPage.style.position = 'absolute';
-    tempPage.style.left = '-9999px';
+    tempPage.style.top = '0';
+    tempPage.style.left = '0';
+    tempPage.style.width = '100%';
+    tempPage.style.height = '100%';
 
     const tempMeasure = document.createElement('div');
     tempMeasure.className = 'folio-page-content';
@@ -916,7 +1096,34 @@ function splitContentIntoPages(content, container) {
       const hasHorizontalOverflow = tempMeasure.scrollWidth > availableWidth;
 
       if ((hasVerticalOverflow || hasHorizontalOverflow) && currentPageContent) {
-        // Current page is full, don't increment index
+        // Current page is full (commented out verbose logging)
+        // console.log(`Page ${pages.length + 1} full. Next element: ${el.tagName}`);
+        // console.log(`  Vertical: ${tempMeasure.scrollHeight} vs ${availableHeight} (overflow: ${hasVerticalOverflow})`);
+        // console.log(`  Horizontal: ${tempMeasure.scrollWidth} vs ${availableWidth} (overflow: ${hasHorizontalOverflow})`);
+
+        // Try to split paragraphs across pages
+        if (el.tagName === 'P') {
+          const splitResult = splitParagraph(el, currentPageContent, tempMeasure, availableHeight, availableWidth);
+          if (splitResult) {
+            // Add the part that fits to current page
+            currentPageContent += splitResult.firstPart;
+            // Insert the remainder back into elements array for next page
+            const remainderP = document.createElement('p');
+            remainderP.innerHTML = splitResult.remainder;
+            // Copy any classes from original paragraph EXCEPT drop cap
+            if (el.className) {
+              const classes = el.className.split(' ').filter(c => c !== 'has-drop-cap');
+              if (classes.length > 0) {
+                remainderP.className = classes.join(' ');
+              }
+            }
+            elements.splice(elementIndex, 1, remainderP);
+            // console.log(`  Split paragraph: ${splitResult.firstPart.length} chars on this page, ${splitResult.remainder.length} chars to next`);
+            break;
+          }
+        }
+
+        // Element doesn't fit and couldn't be split, leave it for next page
         break;
       } else {
         currentPageContent += el.outerHTML;
@@ -1328,6 +1535,71 @@ function toggleFullscreen() {
   }
 }
 
+function exportToPDF() {
+  if (!readerModeActive) return;
+
+  const container = document.getElementById('folio-reader-container');
+  if (!container) return;
+
+  // Store current active page
+  const previousPage = currentPage;
+
+  // Calculate current column width to preserve it in print
+  const pageContent = document.querySelector('.folio-page-content');
+  if (pageContent) {
+    const currentWidth = pageContent.offsetWidth;
+    const gapSpace = (columnCount - 1) * columnGap;
+    const columnWidth = (currentWidth - gapSpace) / columnCount;
+
+    // Adjusted for wider screens to maintain ~3:4 ratio
+    const printPageWidth = 1300;
+    const printGapSpace = columnGap;
+
+    // Calculate how many columns of this width fit on print page
+    const printColumns = Math.max(1, Math.floor((printPageWidth + printGapSpace) / (columnWidth + printGapSpace)));
+
+    console.log(`Column width: ${columnWidth.toFixed(0)}px, Print columns: ${printColumns}`);
+    container.style.setProperty('--print-columns', printColumns);
+  } else {
+    // Fallback to 2 columns if we can't measure
+    container.style.setProperty('--print-columns', 2);
+  }
+
+  // Make all pages visible for printing
+  const allPages = document.querySelectorAll('.folio-page');
+  allPages.forEach(page => {
+    page.classList.add('active');
+  });
+
+  // Hide the navigation temporarily
+  const nav = document.querySelector('.folio-nav');
+  if (nav) {
+    nav.style.display = 'none';
+  }
+
+  // Open print dialog
+  window.print();
+
+  // Restore state after print dialog closes
+  // Note: There's no reliable cross-browser way to detect when print dialog closes,
+  // but we can restore immediately as the print styles only apply during actual printing
+  setTimeout(() => {
+    // Restore only the previously active page
+    allPages.forEach((page, index) => {
+      if (index === previousPage) {
+        page.classList.add('active');
+      } else {
+        page.classList.remove('active');
+      }
+    });
+
+    // Show navigation again
+    if (nav) {
+      nav.style.display = '';
+    }
+  }, 100);
+}
+
 function activateReaderMode() {
   if (readerModeActive) return;
 
@@ -1336,6 +1608,18 @@ function activateReaderMode() {
     overflow: document.body.style.overflow
   };
 
+  // Before Readability strips classes, find paragraphs with drop caps
+  const dropCapParagraphs = [];
+  const originalDropCaps = document.querySelectorAll('p.has-drop-cap, p[class*="drop"], p[class*="Drop"]');
+  originalDropCaps.forEach(p => {
+    // Store first 100 chars of text to match later
+    const text = p.textContent.trim().substring(0, 100);
+    if (text) {
+      dropCapParagraphs.push(text);
+      // console.log('Found drop cap paragraph:', text);
+    }
+  });
+
   const documentClone = document.cloneNode(true);
   const reader = new Readability(documentClone);
   const article = reader.parse();
@@ -1343,6 +1627,95 @@ function activateReaderMode() {
   if (!article) {
     console.error('Folio Reader: Could not parse article');
     return;
+  }
+
+  // Store raw article for debugging
+  rawArticle = article;
+
+  // Log blockquote areas from raw content
+  const rawContentDiv = document.createElement('div');
+  rawContentDiv.innerHTML = article.content;
+  const rawBlockquotes = rawContentDiv.querySelectorAll('blockquote');
+  console.log(`\nRAW READABILITY: Found ${rawBlockquotes.length} blockquotes`);
+  rawBlockquotes.forEach((bq, i) => {
+    const bqHTML = bq.outerHTML;
+    const startPos = article.content.indexOf(bqHTML);
+    const contextStart = Math.max(0, startPos - 200);
+    const contextEnd = Math.min(article.content.length, startPos + bqHTML.length + 500);
+    console.log(`\nBlockquote ${i + 1} with context (500 chars after):`);
+    console.log(article.content.substring(contextStart, contextEnd));
+  });
+
+  // Clean up duplicate blockquote content that appears as following paragraphs
+  const contentDiv = document.createElement('div');
+  contentDiv.innerHTML = article.content;
+
+  const blockquotes = contentDiv.querySelectorAll('blockquote');
+  console.log('\n========== BLOCKQUOTE DEDUPLICATION ==========');
+  console.log(`Found ${blockquotes.length} blockquotes to check for duplicates`);
+
+  blockquotes.forEach((blockquote, index) => {
+    // Get the paragraph inside the blockquote
+    const innerParagraph = blockquote.querySelector('p');
+
+    if (!innerParagraph) {
+      console.log(`\nBlockquote ${index + 1}: No <p> found inside, skipping`);
+      return;
+    }
+
+    const innerHTML = innerParagraph.innerHTML.trim();
+
+    console.log(`\nBlockquote ${index + 1}:`);
+    console.log('  Inner <p> innerHTML:', innerHTML.substring(0, 150) + '...');
+    console.log('  Inner <p> text:', innerParagraph.textContent.substring(0, 80) + '...');
+
+    // Check siblings of the BLOCKQUOTE (not siblings of the inner <p>)
+    let sibling = blockquote.nextElementSibling;
+    let checkCount = 0;
+    const maxSiblingsToCheck = 10;
+
+    while (sibling && checkCount < maxSiblingsToCheck) {
+      if (sibling.tagName === 'P') {
+        const siblingInnerHTML = sibling.innerHTML.trim();
+
+        console.log(`  Sibling ${checkCount + 1} <p>:`, sibling.textContent.substring(0, 80) + '...');
+        console.log(`    innerHTML match: ${siblingInnerHTML === innerHTML}`);
+
+        if (siblingInnerHTML === innerHTML) {
+          console.log('    ✓ FOUND duplicate - REMOVING');
+          sibling.remove();
+          break;
+        }
+      }
+
+      sibling = sibling.nextElementSibling;
+      checkCount++;
+    }
+
+    if (checkCount === maxSiblingsToCheck) {
+      console.log(`  Checked ${maxSiblingsToCheck} siblings, no duplicate found`);
+    }
+  });
+
+  console.log('========== END BLOCKQUOTE DEDUPLICATION ==========\n');
+  article.content = contentDiv.innerHTML;
+
+  // Reapply drop cap classes to matching paragraphs in the cleaned content
+  if (dropCapParagraphs.length > 0) {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = article.content;
+    const allParagraphs = tempDiv.querySelectorAll('p');
+
+    allParagraphs.forEach(p => {
+      const pText = p.textContent.trim().substring(0, 100);
+      if (dropCapParagraphs.includes(pText)) {
+        p.classList.add('has-drop-cap');
+        // console.log('Reapplied drop cap to:', pText);
+      }
+    });
+
+    // Update article content with drop cap classes restored
+    article.content = tempDiv.innerHTML;
   }
 
   const container = document.createElement('div');
@@ -1476,6 +1849,14 @@ function activateReaderMode() {
   widthControl.appendChild(widthSlider);
 
   nav.appendChild(widthControl);
+
+  const printBtn = document.createElement('button');
+  printBtn.id = 'folio-print-btn';
+  printBtn.className = 'folio-fullscreen-btn';
+  printBtn.textContent = '🖨';
+  printBtn.title = 'Export to PDF';
+  printBtn.onclick = exportToPDF;
+  nav.appendChild(printBtn);
 
   const shuffleBtn = document.createElement('button');
   shuffleBtn.id = 'folio-shuffle-btn';
