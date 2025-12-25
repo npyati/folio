@@ -7,7 +7,6 @@ let totalPages = 0;
 let pages = [];
 let fontSizeMultiplier = 1.0;
 let articleContent = null;
-let rawArticle = null; // Store raw Readability API output for debugging
 let columnGap = 30;
 let lineHeight = 1.58;
 let columnCount = 4;
@@ -15,6 +14,11 @@ let viewportWidthPercent = 1.0;
 let currentTheme = null;
 let allImages = [];
 let currentLightboxIndex = 0;
+
+// Site-specific ending marks for content truncation
+const siteEndingMarks = {
+  'economist.com': '■'
+};
 
 // Design element pools for generative combinations
 const themeElements = {
@@ -72,6 +76,25 @@ const themeElements = {
 
 function pickRandom(array) {
   return array[Math.floor(Math.random() * array.length)];
+}
+
+// Truncate article content at site-specific ending marks
+function truncateAtEndingMark(content) {
+  const hostname = window.location.hostname;
+
+  // Check if current site has an ending mark configured
+  for (const [domain, endingMark] of Object.entries(siteEndingMarks)) {
+    if (hostname.includes(domain)) {
+      const endingMarkIndex = content.indexOf(endingMark);
+      if (endingMarkIndex !== -1) {
+        console.log(`Folio: Truncating content at ending mark "${endingMark}" for ${domain}`);
+        // Include the ending mark itself, then truncate everything after
+        return content.substring(0, endingMarkIndex + endingMark.length);
+      }
+    }
+  }
+
+  return content;
 }
 
 function generateRandomTheme(preserveSettings = false) {
@@ -806,7 +829,15 @@ const magazineCSS = `
   @media print {
     @page {
       size: letter;
-      margin: 0.5in;
+      margin: 0;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg-color);
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
 
     #folio-reader-container {
@@ -815,6 +846,7 @@ const magazineCSS = `
       background: var(--bg-color);
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+      min-height: 100vh;
     }
 
     #folio-content-wrapper {
@@ -832,6 +864,8 @@ const magazineCSS = `
       display: block;
       column-count: var(--print-columns, 2);
       column-gap: 30px;
+      padding: 0.5in;
+      box-sizing: border-box;
     }
 
     .folio-page {
@@ -1056,11 +1090,6 @@ function splitContentIntoPages(content, container) {
     return true;
   });
 
-  // Debug: log the structure (commented out to reduce noise)
-  // console.log('Total elements:', elements.length);
-  // console.log('First 10 elements:', elements.slice(0, 10).map(el => `${el.tagName}${el.className ? '.' + el.className : ''}`));
-  // console.log('Content HTML structure:', contentParser.children.length, 'top-level children');
-
   const pages = [];
   let elementIndex = 0;
 
@@ -1096,11 +1125,6 @@ function splitContentIntoPages(content, container) {
       const hasHorizontalOverflow = tempMeasure.scrollWidth > availableWidth;
 
       if ((hasVerticalOverflow || hasHorizontalOverflow) && currentPageContent) {
-        // Current page is full (commented out verbose logging)
-        // console.log(`Page ${pages.length + 1} full. Next element: ${el.tagName}`);
-        // console.log(`  Vertical: ${tempMeasure.scrollHeight} vs ${availableHeight} (overflow: ${hasVerticalOverflow})`);
-        // console.log(`  Horizontal: ${tempMeasure.scrollWidth} vs ${availableWidth} (overflow: ${hasHorizontalOverflow})`);
-
         // Try to split paragraphs across pages
         if (el.tagName === 'P') {
           const splitResult = splitParagraph(el, currentPageContent, tempMeasure, availableHeight, availableWidth);
@@ -1118,7 +1142,6 @@ function splitContentIntoPages(content, container) {
               }
             }
             elements.splice(elementIndex, 1, remainderP);
-            // console.log(`  Split paragraph: ${splitResult.firstPart.length} chars on this page, ${splitResult.remainder.length} chars to next`);
             break;
           }
         }
@@ -1616,7 +1639,6 @@ function activateReaderMode() {
     const text = p.textContent.trim().substring(0, 100);
     if (text) {
       dropCapParagraphs.push(text);
-      // console.log('Found drop cap paragraph:', text);
     }
   });
 
@@ -1629,76 +1651,8 @@ function activateReaderMode() {
     return;
   }
 
-  // Store raw article for debugging
-  rawArticle = article;
-
-  // Log blockquote areas from raw content
-  const rawContentDiv = document.createElement('div');
-  rawContentDiv.innerHTML = article.content;
-  const rawBlockquotes = rawContentDiv.querySelectorAll('blockquote');
-  console.log(`\nRAW READABILITY: Found ${rawBlockquotes.length} blockquotes`);
-  rawBlockquotes.forEach((bq, i) => {
-    const bqHTML = bq.outerHTML;
-    const startPos = article.content.indexOf(bqHTML);
-    const contextStart = Math.max(0, startPos - 200);
-    const contextEnd = Math.min(article.content.length, startPos + bqHTML.length + 500);
-    console.log(`\nBlockquote ${i + 1} with context (500 chars after):`);
-    console.log(article.content.substring(contextStart, contextEnd));
-  });
-
-  // Clean up duplicate blockquote content that appears as following paragraphs
-  const contentDiv = document.createElement('div');
-  contentDiv.innerHTML = article.content;
-
-  const blockquotes = contentDiv.querySelectorAll('blockquote');
-  console.log('\n========== BLOCKQUOTE DEDUPLICATION ==========');
-  console.log(`Found ${blockquotes.length} blockquotes to check for duplicates`);
-
-  blockquotes.forEach((blockquote, index) => {
-    // Get the paragraph inside the blockquote
-    const innerParagraph = blockquote.querySelector('p');
-
-    if (!innerParagraph) {
-      console.log(`\nBlockquote ${index + 1}: No <p> found inside, skipping`);
-      return;
-    }
-
-    const innerHTML = innerParagraph.innerHTML.trim();
-
-    console.log(`\nBlockquote ${index + 1}:`);
-    console.log('  Inner <p> innerHTML:', innerHTML.substring(0, 150) + '...');
-    console.log('  Inner <p> text:', innerParagraph.textContent.substring(0, 80) + '...');
-
-    // Check siblings of the BLOCKQUOTE (not siblings of the inner <p>)
-    let sibling = blockquote.nextElementSibling;
-    let checkCount = 0;
-    const maxSiblingsToCheck = 10;
-
-    while (sibling && checkCount < maxSiblingsToCheck) {
-      if (sibling.tagName === 'P') {
-        const siblingInnerHTML = sibling.innerHTML.trim();
-
-        console.log(`  Sibling ${checkCount + 1} <p>:`, sibling.textContent.substring(0, 80) + '...');
-        console.log(`    innerHTML match: ${siblingInnerHTML === innerHTML}`);
-
-        if (siblingInnerHTML === innerHTML) {
-          console.log('    ✓ FOUND duplicate - REMOVING');
-          sibling.remove();
-          break;
-        }
-      }
-
-      sibling = sibling.nextElementSibling;
-      checkCount++;
-    }
-
-    if (checkCount === maxSiblingsToCheck) {
-      console.log(`  Checked ${maxSiblingsToCheck} siblings, no duplicate found`);
-    }
-  });
-
-  console.log('========== END BLOCKQUOTE DEDUPLICATION ==========\n');
-  article.content = contentDiv.innerHTML;
+  // Truncate content at site-specific ending marks
+  article.content = truncateAtEndingMark(article.content);
 
   // Reapply drop cap classes to matching paragraphs in the cleaned content
   if (dropCapParagraphs.length > 0) {
@@ -1710,7 +1664,6 @@ function activateReaderMode() {
       const pText = p.textContent.trim().substring(0, 100);
       if (dropCapParagraphs.includes(pText)) {
         p.classList.add('has-drop-cap');
-        // console.log('Reapplied drop cap to:', pText);
       }
     });
 
