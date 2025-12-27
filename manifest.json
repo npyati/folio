@@ -10,13 +10,16 @@
 
   "action": {
     "default_icon": "icons/border-48.png",
-    "default_title": "Toggle Reader Mode"
+    "default_title": "Folio Magazine",
+    "default_popup": "popup.html"
   },
 
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "contextMenus",
+    "notifications"
   ],
 
   "host_permissions": [
@@ -25,6 +28,13 @@
 
   "background": {
     "service_worker": "background.js"
-  }
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["covers/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
   

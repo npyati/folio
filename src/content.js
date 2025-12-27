@@ -1,4 +1,5 @@
 import { Readability } from '@mozilla/readability';
+import JSZip from 'jszip';
 
 let readerModeActive = false;
 let originalContent = null;
@@ -7,6 +8,7 @@ let totalPages = 0;
 let pages = [];
 let fontSizeMultiplier = 1.0;
 let articleContent = null;
+let lastRightClickedElement = null;
 let columnGap = 30;
 let lineHeight = 1.58;
 let columnCount = 4;
@@ -1623,6 +1625,669 @@ function exportToPDF() {
   }, 100);
 }
 
+// Clean HTML content for XHTML compatibility (EPUB requirement)
+function cleanHTMLForXHTML(html) {
+  // Replace common HTML entities with numeric character references
+  // This avoids "Entity not defined" errors in XHTML
+  let cleaned = html
+    .replace(/&nbsp;/g, '&#160;')
+    .replace(/&mdash;/g, '&#8212;')
+    .replace(/&ndash;/g, '&#8211;')
+    .replace(/&ldquo;/g, '&#8220;')
+    .replace(/&rdquo;/g, '&#8221;')
+    .replace(/&lsquo;/g, '&#8216;')
+    .replace(/&rsquo;/g, '&#8217;')
+    .replace(/&hellip;/g, '&#8230;')
+    .replace(/&bull;/g, '&#8226;')
+    .replace(/&copy;/g, '&#169;')
+    .replace(/&reg;/g, '&#174;')
+    .replace(/&trade;/g, '&#8482;');
+
+  // Make self-closing tags XHTML compliant
+  // Match tags that aren't already self-closed
+  cleaned = cleaned.replace(/<img([^>]*?)>/gi, '<img$1 />');
+  cleaned = cleaned.replace(/<br([^>]*?)>/gi, '<br$1 />');
+  cleaned = cleaned.replace(/<hr([^>]*?)>/gi, '<hr$1 />');
+  cleaned = cleaned.replace(/<input([^>]*?)>/gi, '<input$1 />');
+  cleaned = cleaned.replace(/<source([^>]*?)>/gi, '<source$1 />');
+  cleaned = cleaned.replace(/<meta([^>]*?)>/gi, '<meta$1 />');
+  cleaned = cleaned.replace(/<link([^>]*?)>/gi, '<link$1 />');
+
+  // Remove picture elements and extract img (for EPUB compatibility)
+  cleaned = cleaned.replace(/<picture[^>]*?>([\s\S]*?)<\/picture>/gi, (match, inner) => {
+    // Extract img tag from picture element
+    const imgMatch = inner.match(/<img[^>]*?\/>/i);
+    return imgMatch ? imgMatch[0] : '';
+  });
+
+  return cleaned;
+}
+
+// Export magazine collection as PDF
+async function exportMagazinePDF() {
+  const { magazine = [] } = await chrome.storage.local.get('magazine');
+
+  if (magazine.length === 0) {
+    alert('No articles in magazine to export');
+    return;
+  }
+
+  // Combine all articles
+  let combinedContent = '';
+  magazine.forEach((article, index) => {
+    combinedContent += `<div class="folio-article-byline">${article.source}</div>`;
+    combinedContent += `<h1>${article.title}</h1>`;
+    combinedContent += `<div class="folio-article-byline">${article.author}</div>`;
+    combinedContent += article.content;
+    if (index < magazine.length - 1) {
+      combinedContent += '<div style="page-break-after: always;"></div>';
+    }
+  });
+
+  // Create temporary container
+  const tempContainer = document.createElement('div');
+  tempContainer.innerHTML = combinedContent;
+  document.body.appendChild(tempContainer);
+
+  // Trigger print
+  window.print();
+
+  // Clean up
+  tempContainer.remove();
+}
+
+// Export magazine collection as EPUB
+async function exportMagazineEPUB() {
+  const { magazine = [] } = await chrome.storage.local.get('magazine');
+
+  if (magazine.length === 0) {
+    alert('No articles in magazine to export');
+    return;
+  }
+
+  const zip = new JSZip();
+
+  // Get random cover from covers folder
+  const covers = ['jellyfish.jpg']; // Add more cover filenames here as needed
+  const randomCover = covers[Math.floor(Math.random() * covers.length)];
+  const coverURL = chrome.runtime.getURL(`covers/${randomCover}`);
+
+  // Fetch and add cover image
+  let coverAdded = false;
+  let coverExt = 'jpg';
+  let coverMediaType = 'image/jpeg';
+  try {
+    const coverResponse = await fetch(coverURL);
+    const coverBlob = await coverResponse.blob();
+    coverMediaType = coverBlob.type || 'image/jpeg';
+    coverExt = coverMediaType.split('/')[1] || 'jpg';
+    const coverFilename = `cover.${coverExt}`;
+    zip.folder('OEBPS').file(coverFilename, coverBlob);
+    coverAdded = true;
+  } catch (error) {
+    console.warn('Failed to add cover image:', error);
+  }
+
+  // Process each article and build TOC entries
+  const tocEntries = [];
+  const imageManifest = [];
+  let imageIndex = 0;
+  let combinedContent = '';
+
+  for (let i = 0; i < magazine.length; i++) {
+    const article = magazine[i];
+    const articleId = `article-${i}`;
+
+    // Create TOC entry
+    tocEntries.push({
+      id: articleId,
+      title: article.title,
+      order: i + 1
+    });
+
+    // Process article content through DOM to ensure valid HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = article.content;
+
+    // Extract img from picture elements first
+    const pictures = tempDiv.querySelectorAll('picture');
+    pictures.forEach(picture => {
+      const img = picture.querySelector('img');
+      if (img) {
+        // Replace picture with just the img
+        picture.replaceWith(img.cloneNode(true));
+      }
+    });
+
+    // Process images
+    const images = tempDiv.querySelectorAll('img');
+    for (const img of images) {
+      const src = img.getAttribute('src') || img.getAttribute('data-src');
+      if (src && !src.startsWith('data:')) {
+        try {
+          // Try fetching through background service worker first to bypass CORS
+          let blob, contentType;
+          try {
+            const bgResult = await fetchImageThroughBackground(src);
+            blob = bgResult.blob;
+            contentType = bgResult.type || 'image/jpeg';
+          } catch (bgError) {
+            // Fallback to direct fetch
+            const response = await fetch(src, {
+              mode: 'cors',
+              credentials: 'omit'
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+
+            blob = await response.blob();
+            contentType = blob.type || 'image/jpeg';
+          }
+
+          const ext = contentType.split('/')[1] || 'jpg';
+          const filename = `image${imageIndex}.${ext}`;
+
+          zip.folder('OEBPS').file(filename, blob);
+          imageManifest.push({
+            id: `img${imageIndex}`,
+            href: filename,
+            mediaType: contentType
+          });
+
+          img.setAttribute('src', filename);
+          img.removeAttribute('data-src');
+          imageIndex++;
+        } catch (error) {
+          // Silently skip images that can't be fetched
+          console.log(`Skipping image (${error.message}): ${src.substring(0, 80)}...`);
+          img.remove();
+        }
+      }
+    }
+
+    // Get cleaned innerHTML from DOM
+    const cleanedContent = tempDiv.innerHTML;
+
+    // Build article section with proper structure
+    combinedContent += `
+<div class="magazine-article" id="${articleId}">
+  <div class="article-source">${escapeXML(article.source)}</div>
+  <h1>${escapeXML(article.title)}</h1>
+  <div class="article-author">${escapeXML(article.author)}</div>
+  <div class="article-content">
+${cleanedContent}
+  </div>
+</div>`;
+  }
+
+  // Clean HTML for XHTML
+  combinedContent = cleanHTMLForXHTML(combinedContent);
+
+  // Create EPUB structure
+  zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
+
+  const containerXML = `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`;
+  zip.folder('META-INF').file('container.xml', containerXML);
+
+  let manifestItems = `    <item id="content" href="content.html" media-type="application/xhtml+xml"/>
+    <item id="stylesheet" href="stylesheet.css" media-type="text/css"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`;
+
+  // Add cover to manifest if it was added
+  if (coverAdded) {
+    manifestItems += `\n    <item id="cover-image" href="cover.${coverExt}" media-type="${coverMediaType}"/>`;
+  }
+
+  imageManifest.forEach(img => {
+    manifestItems += `\n    <item id="${img.id}" href="${img.href}" media-type="${img.mediaType}"/>`;
+  });
+
+  // Create title with date/time
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+  const epubTitle = `folio ${dateStr} ${timeStr}`;
+
+  const contentOPF = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>${epubTitle}</dc:title>
+    <dc:creator>Various Authors</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:identifier id="bookid">folio-magazine-${Date.now()}</dc:identifier>${coverAdded ? '\n    <meta name="cover" content="cover-image"/>' : ''}
+  </metadata>
+  <manifest>
+${manifestItems}
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="content"/>
+  </spine>
+</package>`;
+  zip.folder('OEBPS').file('content.opf', contentOPF);
+
+  // Build NCX navigation with all articles
+  let navPoints = '';
+  tocEntries.forEach(entry => {
+    navPoints += `
+    <navPoint id="${entry.id}" playOrder="${entry.order}">
+      <navLabel>
+        <text>${escapeXML(entry.title)}</text>
+      </navLabel>
+      <content src="content.html#${entry.id}"/>
+    </navPoint>`;
+  });
+
+  const tocNCX = `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="folio-magazine-${Date.now()}"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle>
+    <text>Folio Magazine Collection</text>
+  </docTitle>
+  <navMap>${navPoints}
+  </navMap>
+</ncx>`;
+  zip.folder('OEBPS').file('toc.ncx', tocNCX);
+
+  const contentXHTML = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>Folio Magazine Collection</title>
+  <link rel="stylesheet" type="text/css" href="stylesheet.css"/>
+</head>
+<body>
+  <h1 style="text-align: center; margin-bottom: 2em;">Folio Magazine Collection</h1>
+  ${combinedContent}
+</body>
+</html>`;
+  zip.folder('OEBPS').file('content.html', contentXHTML);
+
+  const stylesheet = `
+body {
+  font-family: Georgia, serif;
+  line-height: 1.6;
+  margin: 2em;
+  max-width: 40em;
+}
+
+h1 {
+  font-size: 2em;
+  margin-bottom: 0.5em;
+  line-height: 1.2;
+}
+
+.magazine-article {
+  margin-bottom: 4em;
+  page-break-after: always;
+}
+
+.article-source {
+  font-size: 0.9em;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.5em;
+}
+
+.article-author {
+  font-style: italic;
+  color: #666;
+  margin-bottom: 2em;
+}
+
+p {
+  margin: 1em 0;
+  text-align: justify;
+}
+
+blockquote {
+  margin: 1.5em 2em;
+  padding-left: 1em;
+  border-left: 3px solid #ccc;
+  font-style: italic;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1em auto;
+}
+
+.has-drop-cap::first-letter {
+  font-size: 3em;
+  line-height: 0.9;
+  float: left;
+  margin: 0.1em 0.1em 0 0;
+}
+`;
+  zip.folder('OEBPS').file('stylesheet.css', stylesheet);
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${epubTitle}.epub`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  console.log('Magazine EPUB exported successfully');
+}
+
+// Export current article content as EPUB
+async function exportToEPUB() {
+  if (!readerModeActive || !articleContent) {
+    console.error('No article content to export');
+    return;
+  }
+
+  const zip = new JSZip();
+
+  // Get the current article content from DOM (includes removed paragraphs)
+  const container = document.getElementById('folio-reader-container');
+  if (!container) return;
+
+  // Extract article metadata
+  const titleElement = container.querySelector('h1');
+  const bylineElement = container.querySelector('.folio-article-byline');
+  const title = titleElement ? titleElement.textContent.trim() : 'Untitled Article';
+  const author = bylineElement ? bylineElement.textContent.trim() : 'Unknown Author';
+
+  // Extract the current content from all pages, cleaning up pagination artifacts
+  const pageContentElements = container.querySelectorAll('.folio-page-content');
+  const tempDiv = document.createElement('div');
+
+  // Collect all content elements while filtering out page numbers and artifacts
+  pageContentElements.forEach(pageContent => {
+    const clone = pageContent.cloneNode(true);
+    // Remove page numbers
+    clone.querySelectorAll('.folio-page-number').forEach(el => el.remove());
+    tempDiv.appendChild(clone);
+  });
+
+  // Extract clean HTML from content elements
+  let contentHTML = '';
+  const contentElements = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6, p, blockquote, ul, ol, img, figure');
+  contentElements.forEach(el => {
+    // Skip if this is inside a blockquote (to avoid duplicates from our earlier fix)
+    if (el.tagName === 'P' && el.closest('blockquote')) {
+      return;
+    }
+    // Skip h1 elements that match the title (to avoid duplicate title)
+    if (el.tagName === 'H1' && el.textContent.trim() === title) {
+      return;
+    }
+    contentHTML += el.outerHTML;
+  });
+
+  // Process images - fetch and embed them in the EPUB
+  const images = tempDiv.querySelectorAll('img');
+  const imageManifest = [];
+  let imageIndex = 0;
+
+  for (const img of images) {
+    const src = img.getAttribute('src');
+    if (src && !src.startsWith('data:')) {
+      try {
+        // Try fetching through background service worker first to bypass CORS
+        let blob, contentType;
+        try {
+          const bgResult = await fetchImageThroughBackground(src);
+          blob = bgResult.blob;
+          contentType = bgResult.type || 'image/jpeg';
+        } catch (bgError) {
+          // Fallback to direct fetch
+          const response = await fetch(src, {
+            mode: 'cors',
+            credentials: 'omit'
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          blob = await response.blob();
+          contentType = blob.type || 'image/jpeg';
+        }
+
+        // Determine file extension from content type
+        const ext = contentType.split('/')[1] || 'jpg';
+        const filename = `image${imageIndex}.${ext}`;
+
+        // Add image to EPUB
+        zip.folder('OEBPS').file(filename, blob);
+
+        // Add to manifest
+        imageManifest.push({
+          id: `img${imageIndex}`,
+          href: filename,
+          mediaType: contentType
+        });
+
+        // Update img src in contentHTML to point to local file
+        contentHTML = contentHTML.replace(
+          new RegExp(escapeRegex(src), 'g'),
+          filename
+        );
+
+        imageIndex++;
+      } catch (error) {
+        // Silently skip images that can't be fetched
+        console.log(`Skipping image (${error.message}): ${src.substring(0, 80)}...`);
+        // Remove broken images
+        contentHTML = contentHTML.replace(
+          new RegExp(`<img[^>]*src="${escapeRegex(src)}"[^>]*/>`, 'g'),
+          ''
+        );
+      }
+    }
+  }
+
+  // Clean up HTML entities for XHTML compatibility
+  contentHTML = cleanHTMLForXHTML(contentHTML);
+
+  // Create EPUB structure
+  // 1. mimetype (must be first and uncompressed)
+  zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
+
+  // 2. META-INF/container.xml
+  const containerXML = `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`;
+  zip.folder('META-INF').file('container.xml', containerXML);
+
+  // 3. OEBPS/content.opf (package document)
+  let manifestItems = `    <item id="content" href="content.html" media-type="application/xhtml+xml"/>
+    <item id="stylesheet" href="stylesheet.css" media-type="text/css"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`;
+
+  // Add images to manifest
+  imageManifest.forEach(img => {
+    manifestItems += `\n    <item id="${img.id}" href="${img.href}" media-type="${img.mediaType}"/>`;
+  });
+
+  const contentOPF = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>${escapeXML(title)}</dc:title>
+    <dc:creator>${escapeXML(author)}</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:identifier id="bookid">folio-${Date.now()}</dc:identifier>
+  </metadata>
+  <manifest>
+${manifestItems}
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="content"/>
+  </spine>
+</package>`;
+  zip.folder('OEBPS').file('content.opf', contentOPF);
+
+  // 4. OEBPS/toc.ncx (navigation)
+  const tocNCX = `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="folio-${Date.now()}"/>
+    <meta name="dtb:depth" content="1"/>
+  </head>
+  <docTitle>
+    <text>${escapeXML(title)}</text>
+  </docTitle>
+  <navMap>
+    <navPoint id="content">
+      <navLabel>
+        <text>${escapeXML(title)}</text>
+      </navLabel>
+      <content src="content.html"/>
+    </navPoint>
+  </navMap>
+</ncx>`;
+  zip.folder('OEBPS').file('toc.ncx', tocNCX);
+
+  // 5. OEBPS/content.html (the article)
+  const contentXHTML = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>${escapeXML(title)}</title>
+  <link rel="stylesheet" type="text/css" href="stylesheet.css"/>
+</head>
+<body>
+  <h1>${escapeXML(title)}</h1>
+  ${author !== 'Unknown Author' ? `<p class="byline">${escapeXML(author)}</p>` : ''}
+  <div class="content">
+    ${contentHTML}
+  </div>
+</body>
+</html>`;
+  zip.folder('OEBPS').file('content.html', contentXHTML);
+
+  // 6. OEBPS/stylesheet.css
+  const stylesheet = `
+body {
+  font-family: Georgia, serif;
+  line-height: 1.6;
+  margin: 2em;
+  max-width: 40em;
+}
+
+h1 {
+  font-size: 2em;
+  margin-bottom: 0.5em;
+  line-height: 1.2;
+}
+
+.byline {
+  font-style: italic;
+  color: #666;
+  margin-bottom: 2em;
+}
+
+p {
+  margin: 1em 0;
+  text-align: justify;
+}
+
+blockquote {
+  margin: 1.5em 2em;
+  padding-left: 1em;
+  border-left: 3px solid #ccc;
+  font-style: italic;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1em auto;
+}
+
+.has-drop-cap::first-letter {
+  font-size: 3em;
+  line-height: 0.9;
+  float: left;
+  margin: 0.1em 0.1em 0 0;
+}
+`;
+  zip.folder('OEBPS').file('stylesheet.css', stylesheet);
+
+  // Generate the EPUB file
+  const blob = await zip.generateAsync({ type: 'blob' });
+
+  // Create download link
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${sanitizeFilename(title)}.epub`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  console.log('EPUB exported successfully');
+}
+
+// Helper function to escape XML special characters
+function escapeXML(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// Helper function to escape regex special characters
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Helper function to sanitize filename
+function sanitizeFilename(str) {
+  return str
+    .replace(/[^a-z0-9]/gi, '_')
+    .replace(/_{2,}/g, '_')
+    .substring(0, 50);
+}
+
+// Helper function to fetch images through background service worker to bypass CORS
+async function fetchImageThroughBackground(url) {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'fetchImage',
+      url: url
+    });
+
+    if (response && response.success) {
+      // Convert base64 data URL to blob
+      const base64Response = await fetch(response.data);
+      const blob = await base64Response.blob();
+      return { blob, type: response.type };
+    } else {
+      throw new Error(response.error || 'Failed to fetch image');
+    }
+  } catch (error) {
+    throw error;
+  }
+}
+
 function activateReaderMode() {
   if (readerModeActive) return;
 
@@ -1810,6 +2475,14 @@ function activateReaderMode() {
   printBtn.title = 'Export to PDF';
   printBtn.onclick = exportToPDF;
   nav.appendChild(printBtn);
+
+  const epubBtn = document.createElement('button');
+  epubBtn.id = 'folio-epub-btn';
+  epubBtn.className = 'folio-fullscreen-btn';
+  epubBtn.textContent = '📖';
+  epubBtn.title = 'Export to EPUB';
+  epubBtn.onclick = exportToEPUB;
+  nav.appendChild(epubBtn);
 
   const shuffleBtn = document.createElement('button');
   shuffleBtn.id = 'folio-shuffle-btn';
@@ -2000,6 +2673,72 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       activateReaderMode();
     }
     sendResponse({ success: true, active: readerModeActive });
+  } else if (request.action === 'removeParagraph') {
+    if (readerModeActive && lastRightClickedElement) {
+      // Remove the element
+      lastRightClickedElement.remove();
+      lastRightClickedElement = null;
+
+      // Re-paginate the content
+      const container = document.getElementById('folio-reader-container');
+      if (container && articleContent) {
+        // Get the current article HTML from the DOM
+        const contentWrapper = container.querySelector('#folio-content-wrapper');
+        if (contentWrapper) {
+          // Extract just the article content from all pages
+          const pageContentElements = contentWrapper.querySelectorAll('.folio-page-content');
+          let updatedContent = '';
+          pageContentElements.forEach(pageContent => {
+            updatedContent += pageContent.innerHTML;
+          });
+
+          // Re-split into pages
+          pages = splitContentIntoPages(updatedContent, currentTheme);
+          currentPage = Math.min(currentPage, pages.length - 1);
+          renderPage(currentPage);
+        }
+      }
+      sendResponse({ success: true });
+    } else {
+      sendResponse({ success: false, message: 'Not in reader mode or no element selected' });
+    }
+  } else if (request.action === 'getArticleData') {
+    // Extract article data for adding to magazine
+    const documentClone = document.cloneNode(true);
+    const reader = new Readability(documentClone);
+    const article = reader.parse();
+
+    if (article) {
+      // Truncate content at site-specific ending marks
+      article.content = truncateAtEndingMark(article.content);
+
+      sendResponse({
+        article: {
+          title: article.title || 'Untitled',
+          author: article.byline || 'Unknown Author',
+          source: new URL(window.location.href).hostname,
+          url: window.location.href,
+          content: article.content,
+          excerpt: article.excerpt || '',
+          timestamp: Date.now()
+        }
+      });
+    } else {
+      sendResponse({ success: false, message: 'Could not parse article' });
+    }
+  } else if (request.action === 'exportMagazinePDF') {
+    exportMagazinePDF();
+    sendResponse({ success: true });
+  } else if (request.action === 'exportMagazineEPUB') {
+    exportMagazineEPUB();
+    sendResponse({ success: true });
   }
   return true;
+});
+
+// Track right-clicked elements in reader mode
+document.addEventListener('contextmenu', (e) => {
+  if (readerModeActive) {
+    lastRightClickedElement = e.target;
+  }
 });
