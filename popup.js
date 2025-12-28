@@ -121,16 +121,24 @@ async function clearAll() {
 }
 
 async function exportPDF() {
-  // Send message to active tab to export magazine as PDF
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  chrome.tabs.sendMessage(tab.id, { action: 'exportMagazinePDF' });
+  // Open export page with PDF hash
+  await chrome.tabs.create({
+    url: chrome.runtime.getURL('export.html#pdf'),
+    active: true
+  });
+
+  // Close popup
   window.close();
 }
 
 async function exportEPUB() {
-  // Send message to active tab to export magazine as EPUB
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  chrome.tabs.sendMessage(tab.id, { action: 'exportMagazineEPUB' });
+  // Open export page with EPUB hash
+  await chrome.tabs.create({
+    url: chrome.runtime.getURL('export.html#epub'),
+    active: true
+  });
+
+  // Close popup
   window.close();
 }
 
@@ -138,6 +146,13 @@ async function exportEPUB() {
 document.getElementById('export-pdf').addEventListener('click', exportPDF);
 document.getElementById('export-epub').addEventListener('click', exportEPUB);
 document.getElementById('clear-all').addEventListener('click', clearAll);
+
+// Listen for storage changes to update magazine in real-time
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.magazine) {
+    loadArticles();
+  }
+});
 
 // Load articles on popup open
 loadArticles();

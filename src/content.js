@@ -831,7 +831,7 @@ const magazineCSS = `
   @media print {
     @page {
       size: letter;
-      margin: 0;
+      margin: 0.5in 0.4in;
     }
 
     html, body {
@@ -865,8 +865,7 @@ const magazineCSS = `
       height: auto;
       display: block;
       column-count: var(--print-columns, 2);
-      column-gap: 30px;
-      padding: 0.5in;
+      column-gap: 40px;
       box-sizing: border-box;
     }
 
@@ -1672,28 +1671,79 @@ async function exportMagazinePDF() {
     return;
   }
 
-  // Combine all articles
+  // Store original body content
+  const originalBodyHTML = document.body.innerHTML;
+  const originalBodyOverflow = document.body.style.overflow;
+
+  // Combine all articles with proper formatting
   let combinedContent = '';
-  magazine.forEach((article, index) => {
-    combinedContent += `<div class="folio-article-byline">${article.source}</div>`;
-    combinedContent += `<h1>${article.title}</h1>`;
-    combinedContent += `<div class="folio-article-byline">${article.author}</div>`;
-    combinedContent += article.content;
-    if (index < magazine.length - 1) {
-      combinedContent += '<div style="page-break-after: always;"></div>';
-    }
+  magazine.forEach((article) => {
+    combinedContent += `
+      <div class="folio-article-byline">${escapeXML(article.source)}</div>
+      <h1 class="folio-article-title">${escapeXML(article.title)}</h1>
+      <div class="folio-article-byline">${escapeXML(article.author)}</div>
+      ${article.content}
+      <div style="margin: 3em 0; border-bottom: 2px solid #e0e0e0;"></div>
+    `;
   });
 
-  // Create temporary container
-  const tempContainer = document.createElement('div');
-  tempContainer.innerHTML = combinedContent;
-  document.body.appendChild(tempContainer);
+  // Create full Folio reader container with proper structure
+  const container = document.createElement('div');
+  container.id = 'folio-reader-container';
 
-  // Trigger print
-  window.print();
+  // Apply theme variables for proper styling
+  container.style.setProperty('--bg-color', '#ffffff');
+  container.style.setProperty('--text-color', '#000000');
+  container.style.setProperty('--accent-color', '#2C5F6F');
+  container.style.setProperty('--title-font', "'Playfair Display', Georgia, serif");
+  container.style.setProperty('--body-font', "'Libre Caslon Text', Georgia, serif");
+  container.style.setProperty('--title-size', '2.8em');
+  container.style.setProperty('--title-weight', '700');
+  container.style.setProperty('--title-color', '#2C5F6F');
+  container.style.setProperty('--byline-color', '#666666');
+  container.style.setProperty('--print-columns', '2');
 
-  // Clean up
-  tempContainer.remove();
+  const styleElement = document.createElement('style');
+  styleElement.textContent = magazineCSS;
+  container.appendChild(styleElement);
+
+  const contentWrapper = document.createElement('div');
+  contentWrapper.id = 'folio-content-wrapper';
+  contentWrapper.style.maxWidth = '100%';
+
+  const pagesWrapper = document.createElement('div');
+  pagesWrapper.className = 'folio-pages-wrapper';
+
+  // Create a single page with all content (print CSS will handle pagination)
+  const pageEl = document.createElement('div');
+  pageEl.className = 'folio-page';
+
+  const pageContentEl = document.createElement('div');
+  pageContentEl.className = 'folio-page-content';
+  pageContentEl.style.fontSize = '1.05em';
+  pageContentEl.style.lineHeight = '1.58';
+  pageContentEl.innerHTML = combinedContent;
+
+  pageEl.appendChild(pageContentEl);
+  pagesWrapper.appendChild(pageEl);
+  contentWrapper.appendChild(pagesWrapper);
+  container.appendChild(contentWrapper);
+
+  // Replace body content with magazine
+  document.body.innerHTML = '';
+  document.body.appendChild(container);
+  document.body.style.overflow = 'hidden';
+
+  // Wait for fonts to load and content to render, then print
+  setTimeout(() => {
+    window.print();
+
+    // Restore original page after print dialog
+    setTimeout(() => {
+      document.body.innerHTML = originalBodyHTML;
+      document.body.style.overflow = originalBodyOverflow;
+    }, 100);
+  }, 800);
 }
 
 // Export magazine collection as EPUB
@@ -1761,54 +1811,87 @@ async function exportMagazineEPUB() {
 
     // Process images
     const images = tempDiv.querySelectorAll('img');
+    console.log(`Processing ${images.length} images for article "${article.title}"...`);
+    let fetchedCount = 0;
+    let skippedCount = 0;
+
     for (const img of images) {
       const src = img.getAttribute('src') || img.getAttribute('data-src');
-      if (src && !src.startsWith('data:')) {
+
+      if (!src) {
+        console.log(`  ⊘ Skipping image with no src attribute`);
+        skippedCount++;
+        img.remove();
+        continue;
+      }
+
+      if (src.startsWith('data:')) {
+        console.log(`  ⊘ Skipping data URL image (already embedded)`);
+        skippedCount++;
+        continue;
+      }
+
+      try {
+        // Try fetching through background service worker first to bypass CORS
+        let blob, contentType;
         try {
-          // Try fetching through background service worker first to bypass CORS
-          let blob, contentType;
-          try {
-            const bgResult = await fetchImageThroughBackground(src);
-            blob = bgResult.blob;
-            contentType = bgResult.type || 'image/jpeg';
-          } catch (bgError) {
-            // Fallback to direct fetch
-            const response = await fetch(src, {
-              mode: 'cors',
-              credentials: 'omit'
-            });
-
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}`);
-            }
-
-            blob = await response.blob();
-            contentType = blob.type || 'image/jpeg';
-          }
-
-          const ext = contentType.split('/')[1] || 'jpg';
-          const filename = `image${imageIndex}.${ext}`;
-
-          zip.folder('OEBPS').file(filename, blob);
-          imageManifest.push({
-            id: `img${imageIndex}`,
-            href: filename,
-            mediaType: contentType
+          const bgResult = await fetchImageThroughBackground(src);
+          blob = bgResult.blob;
+          contentType = bgResult.type || 'image/jpeg';
+        } catch (bgError) {
+          // Fallback to direct fetch
+          console.log(`  ⟳ Fallback to direct fetch: ${src.substring(0, 60)}...`);
+          const response = await fetch(src, {
+            mode: 'cors',
+            credentials: 'omit'
           });
 
-          img.setAttribute('src', filename);
-          img.removeAttribute('data-src');
-          imageIndex++;
-        } catch (error) {
-          // Silently skip images that can't be fetched
-          console.log(`Skipping image (${error.message}): ${src.substring(0, 80)}...`);
-          img.remove();
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          blob = await response.blob();
+          contentType = blob.type || 'image/jpeg';
+          console.log(`  ✓ Direct fetch succeeded: ${src.substring(0, 60)}...`);
         }
+
+        const ext = contentType.split('/')[1] || 'jpg';
+        const filename = `image${imageIndex}.${ext}`;
+
+        zip.folder('OEBPS').file(filename, blob);
+        imageManifest.push({
+          id: `img${imageIndex}`,
+          href: filename,
+          mediaType: contentType
+        });
+
+        img.setAttribute('src', filename);
+        img.removeAttribute('data-src');
+        img.removeAttribute('srcset');
+        img.removeAttribute('sizes');
+        imageIndex++;
+        fetchedCount++;
+      } catch (error) {
+        // Skip images that can't be fetched
+        console.log(`  ✗ Failed to fetch (${error.message}): ${src.substring(0, 80)}...`);
+        skippedCount++;
+        img.remove();
       }
     }
 
+    console.log(`  → Summary: ${fetchedCount} fetched, ${skippedCount} skipped/failed`);
+
     // Get cleaned innerHTML from DOM
     const cleanedContent = tempDiv.innerHTML;
+
+    // Debug: show image tags in the cleaned content
+    const imgTagsInContent = cleanedContent.match(/<img[^>]*>/gi) || [];
+    if (imgTagsInContent.length > 0) {
+      console.log(`  → Found ${imgTagsInContent.length} img tags in HTML:`);
+      imgTagsInContent.forEach((tag, i) => {
+        console.log(`    ${i + 1}. ${tag.substring(0, 100)}...`);
+      });
+    }
 
     // Build article section with proper structure
     combinedContent += `
@@ -2279,11 +2362,14 @@ async function fetchImageThroughBackground(url) {
       // Convert base64 data URL to blob
       const base64Response = await fetch(response.data);
       const blob = await base64Response.blob();
+      console.log(`  ✓ Background fetch succeeded: ${url.substring(0, 60)}...`);
       return { blob, type: response.type };
     } else {
+      console.log(`  ✗ Background fetch failed: ${response?.error || 'Unknown error'} - ${url.substring(0, 60)}...`);
       throw new Error(response.error || 'Failed to fetch image');
     }
   } catch (error) {
+    console.log(`  ✗ Background fetch error: ${error.message} - ${url.substring(0, 60)}...`);
     throw error;
   }
 }
@@ -2664,6 +2750,15 @@ function deactivateReaderMode() {
   currentLightboxIndex = 0;
   lastThemeIndex = -1;
 }
+
+// Listen for export events when loaded in export.html
+window.addEventListener('folioExport', async (event) => {
+  if (event.detail.action === 'exportMagazinePDF') {
+    await exportMagazinePDF();
+  } else if (event.detail.action === 'exportMagazineEPUB') {
+    await exportMagazineEPUB();
+  }
+});
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'toggleReaderMode') {

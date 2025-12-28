@@ -32,7 +32,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["covers/*"],
+      "resources": ["covers/*", "export.html", "export.js", "dist/content.js"],
       "matches": ["<all_urls>"]
     }
   ]

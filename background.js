@@ -1,32 +1,22 @@
 // Create context menus on installation
 chrome.runtime.onInstalled.addListener(() => {
-  // To avoid Chrome's automatic grouping, we create items with non-overlapping contexts
-  // or consolidate to fewer items
-
-  // Primary action for pages - View in Reader
+  // Page context menu items
   chrome.contextMenus.create({
     id: 'folio-view',
-    title: 'View in Folio Reader',
+    title: 'View in Reader',
     contexts: ['page']
   });
 
-  // Action menu for extension icon
   chrome.contextMenus.create({
-    id: 'folio-icon-view',
-    title: 'View in Reader',
-    contexts: ['action']
-  });
-
-  chrome.contextMenus.create({
-    id: 'folio-icon-add',
+    id: 'folio-page-add',
     title: 'Add to Magazine',
-    contexts: ['action']
+    contexts: ['page']
   });
 
-  // Paragraph removal in reader mode
+  // Reader mode controls (shown when in reader mode)
   chrome.contextMenus.create({
     id: 'folio-remove-paragraph',
-    title: 'Remove this paragraph (Folio)',
+    title: 'Remove this paragraph',
     contexts: ['selection', 'link', 'image']
   });
 });
@@ -37,9 +27,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     chrome.tabs.sendMessage(tab.id, {
       action: 'removeParagraph'
     });
-  } else if (info.menuItemId === 'folio-view' || info.menuItemId === 'folio-icon-view') {
+  } else if (info.menuItemId === 'folio-view') {
     await toggleReaderMode(tab);
-  } else if (info.menuItemId === 'folio-icon-add') {
+  } else if (info.menuItemId === 'folio-page-add') {
     await addToMagazine(tab);
   }
 });
