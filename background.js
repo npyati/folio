@@ -97,6 +97,32 @@ async function addToMagazine(tab) {
   }
 }
 
+// Handle keyboard shortcuts
+chrome.commands.onCommand.addListener(async (command) => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  if (!tab) return;
+
+  switch (command) {
+    case 'toggle-reader':
+      await toggleReaderMode(tab);
+      break;
+    case 'add-to-magazine':
+      await addToMagazine(tab);
+      break;
+    case 'toggle-fullscreen':
+      // Send message to content script to toggle fullscreen
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          action: 'toggleFullscreen'
+        });
+      } catch (error) {
+        console.error('Error toggling fullscreen:', error);
+      }
+      break;
+  }
+});
+
 // Handle messages from content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'fetchImage') {

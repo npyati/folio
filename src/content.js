@@ -14,6 +14,10 @@ let lineHeight = 1.58;
 let columnCount = 4;
 let viewportWidthPercent = 1.0;
 let currentTheme = null;
+let currentMode = 'light';
+let savedLightTheme = null;
+let savedDarkTheme = null;
+let cursorHideTimeout = null;
 let allImages = [];
 let currentLightboxIndex = 0;
 
@@ -24,17 +28,25 @@ const siteEndingMarks = {
 
 // Design element pools for generative combinations
 const themeElements = {
-  backgrounds: [
+  lightBackgrounds: [
     '#ffffff', '#fefefe', '#fafafa', '#f9f9f9', '#f5f5f5',
     '#f5f1e8', '#faf7f0', '#fff8f0', '#f8f9fa', '#f4f6f8',
-    '#0a0a0a', '#1c1c1e', '#1a1a1a', '#2a2a2a',
     '#fff5eb', '#fef3e2', '#f0e6d2'
   ],
 
-  textColors: [
+  darkBackgrounds: [
+    '#0a0a0a', '#1c1c1e', '#1a1a1a', '#2a2a2a', '#1e1e1e',
+    '#0d0d0d', '#141414', '#252525'
+  ],
+
+  lightTextColors: [
     '#000000', '#1a1a1a', '#2a2419', '#3c3530', '#3e3330',
-    '#2b3e50', '#1e3a52', '#333333', '#2f2f2f',
-    '#e8e8e8', '#d4c5a0', '#f5f5f5', '#cccccc'
+    '#2b3e50', '#1e3a52', '#333333', '#2f2f2f'
+  ],
+
+  darkTextColors: [
+    '#e8e8e8', '#d4c5a0', '#f5f5f5', '#cccccc', '#e0e0e0',
+    '#d8d8d8', '#c9c9c9', '#b8b8b8'
   ],
 
   accentColors: [
@@ -99,9 +111,14 @@ function truncateAtEndingMark(content) {
   return content;
 }
 
-function generateRandomTheme(preserveSettings = false) {
-  const bg = pickRandom(themeElements.backgrounds);
-  const text = pickRandom(themeElements.textColors);
+function generateRandomTheme(mode = 'light', preserveSettings = false) {
+  // Pick colors based on mode
+  const bg = mode === 'dark'
+    ? pickRandom(themeElements.darkBackgrounds)
+    : pickRandom(themeElements.lightBackgrounds);
+  const text = mode === 'dark'
+    ? pickRandom(themeElements.darkTextColors)
+    : pickRandom(themeElements.lightTextColors);
   const accent = pickRandom(themeElements.accentColors);
   const titleFont = pickRandom(themeElements.titleFonts);
   const bodyFont = pickRandom(themeElements.bodyFonts);
@@ -109,9 +126,8 @@ function generateRandomTheme(preserveSettings = false) {
   const titleWeight = pickRandom(themeElements.titleWeights);
   const borderStyle = pickRandom(themeElements.borderStyles);
 
-  // Ensure good contrast
-  const isDarkBg = bg.startsWith('#0') || bg.startsWith('#1') || bg.startsWith('#2');
-  const titleColor = isDarkBg ? (text.startsWith('#e') || text.startsWith('#d') || text.startsWith('#f') ? text : '#f5f5f5') : text;
+  // Colors are already mode-appropriate, no need for contrast checking
+  const titleColor = text;
   const bylineColor = accent;
   const excerptColor = text;
   const decorationColor = accent;
@@ -119,6 +135,7 @@ function generateRandomTheme(preserveSettings = false) {
 
   return {
     name: `Generated ${Date.now()}`,
+    mode: mode,
     background: bg,
     textColor: text,
     accentColor: accent,
@@ -943,7 +960,7 @@ const magazineCSS = `
 
 function pickRandomTheme() {
   // Preserve user settings when generating new theme
-  currentTheme = generateRandomTheme(true);
+  currentTheme = generateRandomTheme(currentMode, true);
   return currentTheme;
 }
 
@@ -989,27 +1006,81 @@ function applyTheme(theme) {
 }
 
 function shuffleTheme() {
-  const newTheme = pickRandomTheme();
+  const newTheme = generateRandomTheme(currentMode, true);
   applyTheme(newTheme);
-  saveTheme(newTheme);
+  saveTheme(newTheme, currentMode);
 }
 
-function saveTheme(theme) {
-  // Save theme to chrome storage
-  chrome.storage.local.set({ folioTheme: theme }, () => {
-    console.log('Theme saved to storage');
+function toggleMode() {
+  // Switch to the opposite mode
+  const newMode = currentMode === 'dark' ? 'light' : 'dark';
+  currentMode = newMode;
+
+  // Get the saved theme for the new mode, or generate one if it doesn't exist
+  let theme;
+  if (newMode === 'dark') {
+    theme = savedDarkTheme || generateRandomTheme('dark', false);
+    if (!savedDarkTheme) {
+      savedDarkTheme = theme;
+    }
+  } else {
+    theme = savedLightTheme || generateRandomTheme('light', false);
+    if (!savedLightTheme) {
+      savedLightTheme = theme;
+    }
+  }
+
+  // Apply the theme and save the mode preference
+  applyTheme(theme);
+  saveTheme(theme, newMode);
+
+  // Update the toggle button icon
+  const modeToggleBtn = document.getElementById('folio-mode-toggle-btn');
+  if (modeToggleBtn) {
+    modeToggleBtn.textContent = currentMode === 'dark' ? '☀️' : '🌙';
+  }
+
+  console.log(`Switched to ${newMode} mode`);
+}
+
+function saveTheme(theme, mode) {
+  // Save theme to chrome storage based on mode
+  const key = mode === 'dark' ? 'folioThemeDark' : 'folioThemeLight';
+  chrome.storage.local.set({ [key]: theme, folioMode: mode }, () => {
+    console.log(`${mode} theme saved to storage`);
   });
+
+  // Update cached themes
+  if (mode === 'dark') {
+    savedDarkTheme = theme;
+  } else {
+    savedLightTheme = theme;
+  }
 }
 
 function loadTheme(callback) {
-  chrome.storage.local.get(['folioTheme'], (result) => {
-    if (result.folioTheme) {
-      console.log('Loaded saved theme from storage');
-      callback(result.folioTheme);
+  chrome.storage.local.get(['folioThemeLight', 'folioThemeDark', 'folioMode'], (result) => {
+    // Load saved mode or default to light
+    currentMode = result.folioMode || 'light';
+
+    // Load both themes if they exist
+    if (result.folioThemeLight) {
+      savedLightTheme = result.folioThemeLight;
+    }
+    if (result.folioThemeDark) {
+      savedDarkTheme = result.folioThemeDark;
+    }
+
+    // Get the appropriate theme for current mode
+    const theme = currentMode === 'dark' ? savedDarkTheme : savedLightTheme;
+
+    if (theme) {
+      console.log(`Loaded saved ${currentMode} theme from storage`);
+      callback(theme);
     } else {
-      console.log('No saved theme, generating new one');
-      const newTheme = pickRandomTheme();
-      saveTheme(newTheme);
+      console.log(`No saved ${currentMode} theme, generating new one`);
+      const newTheme = generateRandomTheme(currentMode);
+      saveTheme(newTheme, currentMode);
       callback(newTheme);
     }
   });
@@ -1247,6 +1318,11 @@ function handleKeyPress(e) {
     case 'End':
       e.preventDefault();
       goToPage(totalPages - 1);
+      break;
+    case 'f':
+    case 'F':
+      e.preventDefault();
+      toggleFullscreen();
       break;
     case 'Escape':
       e.preventDefault();
@@ -1533,6 +1609,8 @@ function toggleFullscreen() {
       if (fullscreenBtn) {
         fullscreenBtn.textContent = 'Exit Fullscreen';
       }
+      // Hide cursor after entering fullscreen
+      enableCursorAutoHide();
       // Rebuild pages after a short delay to let fullscreen settle
       setTimeout(() => {
         if (articleContent) {
@@ -1547,6 +1625,8 @@ function toggleFullscreen() {
       if (fullscreenBtn) {
         fullscreenBtn.textContent = 'Fullscreen';
       }
+      // Show cursor when exiting fullscreen
+      disableCursorAutoHide();
       // Rebuild pages after a short delay to let fullscreen exit settle
       setTimeout(() => {
         if (articleContent) {
@@ -1557,6 +1637,40 @@ function toggleFullscreen() {
       console.error('Error attempting to exit fullscreen:', err);
     });
   }
+}
+
+function enableCursorAutoHide() {
+  const container = document.getElementById('folio-reader-container');
+  if (!container) return;
+
+  // Hide cursor after 2 seconds of inactivity
+  const hideCursor = () => {
+    container.style.cursor = 'none';
+  };
+
+  const showCursor = () => {
+    container.style.cursor = 'default';
+    clearTimeout(cursorHideTimeout);
+    cursorHideTimeout = setTimeout(hideCursor, 2000);
+  };
+
+  // Show cursor on mouse movement
+  container.addEventListener('mousemove', showCursor);
+
+  // Initial hide after 2 seconds
+  cursorHideTimeout = setTimeout(hideCursor, 2000);
+}
+
+function disableCursorAutoHide() {
+  const container = document.getElementById('folio-reader-container');
+  if (!container) return;
+
+  // Clear timeout and show cursor
+  clearTimeout(cursorHideTimeout);
+  container.style.cursor = 'default';
+
+  // Remove event listener (note: this only removes if we stored the function reference)
+  // For simplicity, we'll just ensure cursor is visible
 }
 
 function exportToPDF() {
@@ -2578,6 +2692,14 @@ function activateReaderMode() {
   shuffleBtn.onclick = shuffleTheme;
   nav.appendChild(shuffleBtn);
 
+  const modeToggleBtn = document.createElement('button');
+  modeToggleBtn.id = 'folio-mode-toggle-btn';
+  modeToggleBtn.className = 'folio-fullscreen-btn';
+  modeToggleBtn.textContent = currentMode === 'dark' ? '☀️' : '🌙';
+  modeToggleBtn.title = 'Toggle Light/Dark Mode';
+  modeToggleBtn.onclick = toggleMode;
+  nav.appendChild(modeToggleBtn);
+
   const fullscreenBtn = document.createElement('button');
   fullscreenBtn.id = 'folio-fullscreen-btn';
   fullscreenBtn.className = 'folio-fullscreen-btn';
@@ -2768,6 +2890,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       activateReaderMode();
     }
     sendResponse({ success: true, active: readerModeActive });
+  } else if (request.action === 'toggleFullscreen') {
+    if (readerModeActive) {
+      toggleFullscreen();
+    }
+    sendResponse({ success: true });
   } else if (request.action === 'removeParagraph') {
     if (readerModeActive && lastRightClickedElement) {
       // Remove the element

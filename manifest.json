@@ -30,6 +30,30 @@
     "service_worker": "background.js"
   },
 
+  "commands": {
+    "toggle-reader": {
+      "suggested_key": {
+        "default": "Alt+Shift+R",
+        "mac": "Alt+Shift+R"
+      },
+      "description": "Toggle reader view"
+    },
+    "add-to-magazine": {
+      "suggested_key": {
+        "default": "Alt+Shift+M",
+        "mac": "Alt+Shift+M"
+      },
+      "description": "Add page to magazine"
+    },
+    "toggle-fullscreen": {
+      "suggested_key": {
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
+      },
+      "description": "Toggle fullscreen (in reader view)"
+    }
+  },
+
   "web_accessible_resources": [
     {
       "resources": ["covers/*", "export.html", "export.js", "dist/content.js"],
