@@ -2833,6 +2833,15 @@ function activateReaderMode() {
         nav.classList.add('hidden');
       }
     }, 2000); // Show nav for 2 seconds on load, then hide
+
+    // Check if auto-fullscreen is enabled
+    chrome.storage.local.get(['autoFullscreen'], (result) => {
+      if (result.autoFullscreen && !document.fullscreenElement) {
+        setTimeout(() => {
+          toggleFullscreen();
+        }, 300); // Small delay to let reader mode settle
+      }
+    });
   }, 100);
 }
 
@@ -2964,3 +2973,91 @@ document.addEventListener('contextmenu', (e) => {
     lastRightClickedElement = e.target;
   }
 });
+
+// Auto-open reader mode for configured sites
+async function checkAutoOpen() {
+  // Don't auto-open if already in reader mode
+  if (readerModeActive) return;
+
+  // Get current domain
+  const currentDomain = window.location.hostname.replace(/^www\./, '');
+
+  // Get auto-open domains from storage
+  const { autoOpenDomains = [] } = await chrome.storage.local.get('autoOpenDomains');
+
+  // Check if current domain matches any auto-open domain
+  const shouldAutoOpen = autoOpenDomains.some(domain => {
+    return currentDomain === domain || currentDomain.endsWith('.' + domain);
+  });
+
+  if (!shouldAutoOpen) return;
+
+  // Check if this looks like an article page (not homepage, etc.)
+  const isArticle = detectArticle();
+
+  if (isArticle) {
+    console.log('Folio: Auto-opening reader mode for', currentDomain);
+    // Small delay to let page finish loading
+    setTimeout(() => {
+      activateReaderMode();
+    }, 500);
+  }
+}
+
+// Detect if current page is an article
+function detectArticle() {
+  const path = window.location.pathname;
+
+  // Exclude obvious non-article pages
+  const nonArticlePatterns = [
+    /^\/$/,                    // Homepage
+    /^\/(index|home)/i,        // Index/home pages
+    /^\/(tag|topic|section|category|search)/i,  // Listing pages
+    /^\/[^\/]+\/?$/           // Top-level pages (e.g., /politics, /business)
+  ];
+
+  if (nonArticlePatterns.some(pattern => pattern.test(path))) {
+    return false;
+  }
+
+  // Strong indicators that this IS an article
+  const strongIndicators = [
+    /\/\d{4}\/\d{2}\/\d{2}\//,  // Date in URL (e.g., /2024/01/15/)
+    /\/article\//i,
+    /\/story\//i,
+    /\/post\//i
+  ];
+
+  if (strongIndicators.some(pattern => pattern.test(path))) {
+    return true;
+  }
+
+  // Check if path has sufficient depth (likely an article, not a category page)
+  const pathParts = path.split('/').filter(p => p.length > 0);
+  if (pathParts.length < 2) {
+    return false;  // Too shallow to be an article
+  }
+
+  // Use Readability as final check, but with stricter requirements
+  const documentClone = document.cloneNode(true);
+  const reader = new Readability(documentClone);
+  const article = reader.parse();
+
+  // Require substantial content (2000+ chars) and a proper title
+  if (article &&
+      article.textContent &&
+      article.textContent.length > 2000 &&
+      article.title &&
+      article.title.length > 10) {
+    return true;
+  }
+
+  return false;
+}
+
+// Run auto-open check when page loads
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', checkAutoOpen);
+} else {
+  checkAutoOpen();
+}

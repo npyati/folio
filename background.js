@@ -43,13 +43,7 @@ async function toggleReaderMode(tab) {
   }
 
   try {
-    // First, inject the content script if it hasn't been injected yet
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['dist/content.js']
-    });
-
-    // Then send message to toggle reader mode
+    // Send message to toggle reader mode (content script is now auto-injected)
     const response = await chrome.tabs.sendMessage(tab.id, {
       action: 'toggleReaderMode'
     });
@@ -69,13 +63,7 @@ async function addToMagazine(tab) {
   }
 
   try {
-    // Inject content script if needed
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['dist/content.js']
-    });
-
-    // Get article data
+    // Get article data (content script is now auto-injected)
     const response = await chrome.tabs.sendMessage(tab.id, {
       action: 'getArticleData'
     });
