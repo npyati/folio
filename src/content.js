@@ -2519,6 +2519,11 @@ function activateReaderMode() {
   // Truncate content at site-specific ending marks
   article.content = truncateAtEndingMark(article.content);
 
+  // Clear excerpt for instapaper.com (always shows generic site tagline)
+  if (window.location.hostname.includes('instapaper.com')) {
+    article.excerpt = '';
+  }
+
   // Reapply drop cap classes to matching paragraphs in the cleaned content
   if (dropCapParagraphs.length > 0) {
     const tempDiv = document.createElement('div');
@@ -2942,6 +2947,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (article) {
       // Truncate content at site-specific ending marks
       article.content = truncateAtEndingMark(article.content);
+
+      // Clear excerpt for instapaper.com (always shows generic site tagline)
+      if (window.location.hostname.includes('instapaper.com')) {
+        article.excerpt = '';
+      }
 
       sendResponse({
         article: {
