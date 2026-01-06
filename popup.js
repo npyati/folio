@@ -14,7 +14,7 @@ async function loadArticles() {
       <div class="empty-state">
         <div class="empty-state-icon">📰</div>
         <div class="empty-state-text">No articles yet</div>
-        <div class="empty-state-hint">Right-click the extension icon<br>and select "Add to Magazine"</div>
+        <div class="empty-state-hint">Right-click the extension icon<br>and select "Add to Collection"</div>
       </div>
     `;
     return;
@@ -22,7 +22,7 @@ async function loadArticles() {
 
   listEl.innerHTML = magazine.map((article, index) => `
     <div class="article-item" data-index="${index}" draggable="true">
-      <div class="article-title">${escapeHTML(article.title)}</div>
+      <div class="article-title" data-url="${escapeHTML(article.url)}" style="cursor: pointer;">${escapeHTML(article.title)}</div>
       <div class="article-meta">
         <span class="article-source">${escapeHTML(article.source)}</span>
         <span>${escapeHTML(article.author)}</span>
@@ -76,6 +76,35 @@ function setupDragAndDrop() {
 }
 
 function setupButtons() {
+  // Article title clicks - open URL in new tab and activate reader mode
+  document.querySelectorAll('.article-title').forEach(title => {
+    title.addEventListener('click', async (e) => {
+      const url = e.target.dataset.url;
+      if (url) {
+        const tab = await chrome.tabs.create({ url, active: true });
+
+        // Wait for the page to fully load before activating reader mode
+        const listener = (tabId, changeInfo, updatedTab) => {
+          if (tabId === tab.id && changeInfo.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+
+            // Give the content script a moment to initialize
+            setTimeout(async () => {
+              try {
+                await chrome.tabs.sendMessage(tab.id, {
+                  action: 'toggleReaderMode'
+                });
+              } catch (error) {
+                console.log('Could not activate reader mode:', error);
+              }
+            }, 500);
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      }
+    });
+  });
+
   // Move up/down buttons
   document.querySelectorAll('.move-up').forEach(btn => {
     btn.addEventListener('click', async (e) => {
@@ -210,11 +239,54 @@ async function removeDomain(domain) {
   loadAutoOpenDomains();
 }
 
+async function addCurrentPage() {
+  try {
+    // Get the active tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (!tab) {
+      console.error('No active tab found');
+      return;
+    }
+
+    // Don't run on chrome:// or other restricted pages
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+      alert('Cannot add chrome:// pages to collection');
+      return;
+    }
+
+    // Get article data
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      action: 'getArticleData'
+    });
+
+    if (response && response.article) {
+      // Get existing collection
+      const { magazine: collection = [] } = await chrome.storage.local.get('magazine');
+
+      // Add new article
+      collection.push(response.article);
+
+      // Save to storage
+      await chrome.storage.local.set({ magazine: collection });
+
+      console.log('Article added to collection:', response.article.title);
+
+      // Reload the articles list
+      loadArticles();
+    }
+  } catch (error) {
+    console.error('Error adding current page:', error);
+    alert('Could not add this page to collection');
+  }
+}
+
 // Event listeners
 document.getElementById('export-pdf').addEventListener('click', exportPDF);
 document.getElementById('export-epub').addEventListener('click', exportEPUB);
 document.getElementById('clear-all').addEventListener('click', clearAll);
 document.getElementById('settings-toggle').addEventListener('click', toggleSettings);
+document.getElementById('add-current').addEventListener('click', addCurrentPage);
 document.getElementById('add-domain').addEventListener('click', addDomain);
 document.getElementById('domain-input').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') {

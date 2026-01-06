@@ -303,6 +303,20 @@ const magazineCSS = `
     widows: 2;
   }
 
+  .folio-page-content a,
+  .folio-page-content a:link,
+  .folio-page-content a:visited {
+    color: inherit !important;
+    text-decoration: underline;
+    text-decoration-color: var(--text-color);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+
+  .folio-page-content a:hover {
+    text-decoration-thickness: 2px;
+  }
+
   .folio-page-content p.has-drop-cap {
     margin-top: 2em;
   }
@@ -1639,6 +1653,27 @@ function toggleFullscreen() {
   }
 }
 
+// Handle fullscreen changes (including ESC key)
+function handleFullscreenChange() {
+  const fullscreenBtn = document.getElementById('folio-fullscreen-btn');
+
+  if (!fullscreenBtn) return;
+
+  if (document.fullscreenElement) {
+    fullscreenBtn.textContent = 'Exit Fullscreen';
+    enableCursorAutoHide();
+  } else {
+    fullscreenBtn.textContent = 'Fullscreen';
+    disableCursorAutoHide();
+    // Rebuild pages after exiting fullscreen
+    setTimeout(() => {
+      if (articleContent) {
+        rebuildPages();
+      }
+    }, 100);
+  }
+}
+
 function enableCursorAutoHide() {
   const container = document.getElementById('folio-reader-container');
   if (!container) return;
@@ -1781,7 +1816,7 @@ async function exportMagazinePDF() {
   const { magazine = [] } = await chrome.storage.local.get('magazine');
 
   if (magazine.length === 0) {
-    alert('No articles in magazine to export');
+    alert('No articles in collection to export');
     return;
   }
 
@@ -1865,7 +1900,7 @@ async function exportMagazineEPUB() {
   const { magazine = [] } = await chrome.storage.local.get('magazine');
 
   if (magazine.length === 0) {
-    alert('No articles in magazine to export');
+    alert('No articles in collection to export');
     return;
   }
 
@@ -2795,6 +2830,7 @@ function activateReaderMode() {
   document.addEventListener('keydown', handleKeyPress);
   document.addEventListener('mousemove', handleMouseMove);
   window.addEventListener('resize', handleResize);
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
 
   // Store article content with header prepended
   articleContent = headerHTML + article.content;
@@ -2856,6 +2892,7 @@ function deactivateReaderMode() {
   document.removeEventListener('keydown', handleKeyPress);
   document.removeEventListener('mousemove', handleMouseMove);
   window.removeEventListener('resize', handleResize);
+  document.removeEventListener('fullscreenchange', handleFullscreenChange);
 
   if (navHideTimeout) {
     clearTimeout(navHideTimeout);

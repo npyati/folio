@@ -10,8 +10,11 @@
 
   "action": {
     "default_icon": "icons/border-48.png",
-    "default_title": "Folio Magazine",
-    "default_popup": "popup.html"
+    "default_title": "Folio Magazine"
+  },
+
+  "side_panel": {
+    "default_path": "popup.html"
   },
 
   "permissions": [
@@ -19,7 +22,8 @@
     "scripting",
     "storage",
     "contextMenus",
-    "notifications"
+    "notifications",
+    "sidePanel"
   ],
 
   "host_permissions": [
@@ -51,7 +55,7 @@
         "default": "Alt+Shift+M",
         "mac": "Alt+Shift+M"
       },
-      "description": "Add page to magazine"
+      "description": "Add page to collection"
     },
     "toggle-fullscreen": {
       "suggested_key": {
