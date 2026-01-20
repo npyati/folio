@@ -1906,8 +1906,15 @@ async function exportMagazineEPUB() {
 
   const zip = new JSZip();
 
-  // Get random cover from covers folder
-  const covers = ['jellyfish.jpg']; // Add more cover filenames here as needed
+  // Get random cover from covers folder (reads covers.json for available images)
+  let covers = ['jellyfish.jpg']; // fallback
+  try {
+    const coversJsonURL = chrome.runtime.getURL('covers/covers.json');
+    const coversResponse = await fetch(coversJsonURL);
+    covers = await coversResponse.json();
+  } catch (e) {
+    console.warn('Could not load covers.json, using fallback');
+  }
   const randomCover = covers[Math.floor(Math.random() * covers.length)];
   const coverURL = chrome.runtime.getURL(`covers/${randomCover}`);
 
