@@ -262,6 +262,10 @@ async function loadSettings() {
   // Load auto-fullscreen setting
   const { autoFullscreen = false } = await chrome.storage.local.get('autoFullscreen');
   document.getElementById('auto-fullscreen').checked = autoFullscreen;
+
+  // Load collection as new tab setting
+  const { collectionAsNewTab = false } = await chrome.storage.local.get('collectionAsNewTab');
+  document.getElementById('collection-newtab').checked = collectionAsNewTab;
 }
 
 async function loadAutoOpenDomains() {
@@ -609,6 +613,9 @@ document.getElementById('domain-input').addEventListener('keypress', (e) => {
 document.getElementById('auto-fullscreen').addEventListener('change', async (e) => {
   await chrome.storage.local.set({ autoFullscreen: e.target.checked });
 });
+document.getElementById('collection-newtab').addEventListener('change', async (e) => {
+  await chrome.storage.local.set({ collectionAsNewTab: e.target.checked });
+});
 
 // Listen for storage changes to update magazine in real-time
 chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -618,7 +625,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local' && changes.autoOpenDomains) {
     loadAutoOpenDomains();
   }
-  if (namespace === 'local' && changes.autoFullscreen) {
+  if (namespace === 'local' && (changes.autoFullscreen || changes.collectionAsNewTab)) {
     loadSettings();
   }
 });

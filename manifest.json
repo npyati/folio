@@ -17,6 +17,10 @@
     "default_path": "popup.html"
   },
 
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+
   "permissions": [
     "activeTab",
     "scripting",
@@ -68,7 +72,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["covers/*", "export.html", "export.js", "dist/content.js"],
+      "resources": ["covers/*", "export.html", "export.js", "dist/content.js", "newtab.html", "newtab.js"],
       "matches": ["<all_urls>"]
     }
   ]
