@@ -21,6 +21,14 @@ let cursorHideTimeout = null;
 let allImages = [];
 let currentLightboxIndex = 0;
 
+// Speed reading state
+let speedReadingActive = false;
+let speedReadingWords = [];
+let speedReadingIndex = 0;
+let speedReadingInterval = null;
+let speedReadingWPM = 300;
+let speedReadingPaused = false;
+
 // Site-specific ending marks for content truncation
 const siteEndingMarks = {
   'economist.com': '■'
@@ -516,13 +524,211 @@ const magazineCSS = `
     opacity: 1;
   }
 
+  /* Speed Reading Overlay */
+  .folio-speed-reader {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0);
+    z-index: 2147483650;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    visibility: hidden;
+    transition: background 0.3s ease, visibility 0s linear 0.3s;
+  }
+
+  .folio-speed-reader.active {
+    background: var(--bg-color, #ffffff);
+    visibility: visible;
+    transition: background 0.3s ease, visibility 0s linear;
+  }
+
+  .folio-speed-reader-word {
+    font-family: var(--body-font, 'Georgia', serif);
+    font-size: 72px;
+    font-weight: 400;
+    color: var(--text-color, #000000);
+    min-height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: scale(0.9);
+    opacity: 0;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+
+  .folio-speed-reader.active .folio-speed-reader-word {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  .folio-speed-reader-word .word-before {
+    display: inline-block;
+    text-align: right;
+    min-width: 200px;
+  }
+
+  .folio-speed-reader-word .focal {
+    color: var(--accent-color, #cc0000);
+    display: inline-block;
+    text-align: center;
+  }
+
+  .folio-speed-reader-word .word-after {
+    display: inline-block;
+    text-align: left;
+    min-width: 200px;
+  }
+
+  .folio-speed-reader-focus {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 120px;
+    pointer-events: none;
+  }
+
+  .folio-speed-reader-focus::before,
+  .folio-speed-reader-focus::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+  }
+
+  .folio-speed-reader-focus::before {
+    top: 0;
+    border-top: 8px solid var(--accent-color, #cc0000);
+  }
+
+  .folio-speed-reader-focus::after {
+    bottom: 0;
+    border-bottom: 8px solid var(--accent-color, #cc0000);
+  }
+
+  .folio-speed-reader-controls {
+    position: absolute;
+    bottom: 40px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  .folio-speed-reader.active .folio-speed-reader-controls {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .folio-speed-reader-btn {
+    background-color: var(--bg-color, #ffffff);
+    border: 1px solid var(--text-color, #000000);
+    color: var(--text-color, #000000);
+    font-size: 18px;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .folio-speed-reader-btn:hover {
+    background-color: var(--text-color, #000000);
+    color: var(--bg-color, #ffffff);
+  }
+
+  .folio-speed-reader-btn.play-pause {
+    width: 60px;
+    height: 60px;
+    font-size: 24px;
+  }
+
+  .folio-speed-reader-speed {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-color, #000000);
+    font-family: var(--body-font, 'Georgia', serif);
+    font-size: 14px;
+  }
+
+  .folio-speed-reader-speed input {
+    width: 100px;
+    accent-color: var(--accent-color, #000000);
+  }
+
+  .folio-speed-reader-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgba(128, 128, 128, 0.2);
+  }
+
+  .folio-speed-reader-progress-bar {
+    height: 100%;
+    background: var(--accent-color, #cc0000);
+    width: 0%;
+    transition: width 0.1s linear;
+  }
+
+  .folio-speed-reader-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: var(--bg-color, #ffffff);
+    border: 1px solid var(--text-color, #000000);
+    color: var(--text-color, #000000);
+    font-size: 20px;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s ease, background 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .folio-speed-reader-close:hover {
+    opacity: 1;
+    background-color: var(--text-color, #000000);
+    color: var(--bg-color, #ffffff);
+  }
+
+  .folio-speed-reader-info {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    color: var(--text-color, #000000);
+    font-family: var(--body-font, 'Georgia', serif);
+    font-size: 12px;
+    opacity: 0.6;
+  }
+
   .folio-page-content blockquote {
     font-size: 1.05em;
     font-style: italic;
     margin: 1.5em 0;
     padding: 0 0 0 30px;
-    border-left: 2px solid #000000;
-    color: #333333;
+    border-left: 2px solid var(--accent-color, #000000);
+    color: var(--text-color, #333333);
+    opacity: 0.85;
     font-weight: 400;
   }
 
@@ -1291,7 +1497,45 @@ function updateNavigation() {
 function handleKeyPress(e) {
   if (!readerModeActive) return;
 
-  // Check if lightbox is open first
+  // Check if speed reader is open first
+  if (speedReadingActive) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      stopSpeedReading();
+      return;
+    }
+    if (e.key === ' ') {
+      e.preventDefault();
+      toggleSpeedReadingPause();
+      return;
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      seekSpeedReading(speedReadingIndex - 10);
+      return;
+    }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      seekSpeedReading(speedReadingIndex + 10);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      changeSpeedReadingSpeed(Math.min(800, speedReadingWPM + 50));
+      document.getElementById('folio-speed-reader-slider').value = speedReadingWPM;
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      changeSpeedReadingSpeed(Math.max(100, speedReadingWPM - 50));
+      document.getElementById('folio-speed-reader-slider').value = speedReadingWPM;
+      return;
+    }
+    // Don't handle other keys when speed reader is open
+    return;
+  }
+
+  // Check if lightbox is open
   const lightbox = document.getElementById('folio-lightbox');
   if (lightbox && lightbox.classList.contains('active')) {
     if (e.key === 'Escape') {
@@ -1613,6 +1857,175 @@ function addImageClickHandlers() {
       thumbnailsContainer.appendChild(thumbnail);
     });
   }
+}
+
+// Speed Reading Functions
+function extractWordsFromArticle() {
+  // Get the article content and add spaces around block elements before stripping HTML
+  let html = articleContent;
+
+  // Add spaces after closing block-level elements to prevent word mashing
+  html = html.replace(/<\/(p|div|h[1-6]|li|blockquote|tr|td|th|section|article|header|footer|aside|figcaption)>/gi, '</$1> ');
+  // Replace <br> tags with spaces
+  html = html.replace(/<br\s*\/?>/gi, ' ');
+
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+  const text = tempDiv.textContent || tempDiv.innerText || '';
+
+  // Split into words, filtering out empty strings
+  return text.split(/\s+/).filter(word => word.length > 0);
+}
+
+async function startSpeedReading() {
+  speedReadingWords = extractWordsFromArticle();
+  if (speedReadingWords.length === 0) return;
+
+  // Load saved WPM setting
+  const { speedReadingWPM: savedWPM = 300 } = await chrome.storage.local.get('speedReadingWPM');
+  speedReadingWPM = savedWPM;
+
+  // Update slider and label to match saved value
+  const slider = document.getElementById('folio-speed-reader-slider');
+  if (slider) {
+    slider.value = speedReadingWPM;
+  }
+  const wpmLabel = document.getElementById('folio-speed-reader-wpm');
+  if (wpmLabel) {
+    wpmLabel.textContent = `${speedReadingWPM} WPM`;
+  }
+
+  speedReadingIndex = 0;
+  speedReadingPaused = false;
+  speedReadingActive = true;
+
+  const speedReader = document.getElementById('folio-speed-reader');
+  if (speedReader) {
+    speedReader.classList.add('active');
+  }
+
+  updateSpeedReadingInfo();
+  showCurrentWord();
+  startSpeedReadingInterval();
+}
+
+function stopSpeedReading() {
+  speedReadingActive = false;
+  speedReadingPaused = false;
+
+  if (speedReadingInterval) {
+    clearInterval(speedReadingInterval);
+    speedReadingInterval = null;
+  }
+
+  const speedReader = document.getElementById('folio-speed-reader');
+  if (speedReader) {
+    speedReader.classList.remove('active');
+  }
+}
+
+function toggleSpeedReadingPause() {
+  speedReadingPaused = !speedReadingPaused;
+
+  const playPauseBtn = document.getElementById('folio-speed-reader-play-pause');
+  if (playPauseBtn) {
+    playPauseBtn.textContent = speedReadingPaused ? '▶' : '⏸';
+    playPauseBtn.title = speedReadingPaused ? 'Play (Space)' : 'Pause (Space)';
+  }
+
+  if (speedReadingPaused) {
+    if (speedReadingInterval) {
+      clearInterval(speedReadingInterval);
+      speedReadingInterval = null;
+    }
+  } else {
+    startSpeedReadingInterval();
+  }
+}
+
+function startSpeedReadingInterval() {
+  if (speedReadingInterval) {
+    clearInterval(speedReadingInterval);
+  }
+
+  const intervalMs = Math.round(60000 / speedReadingWPM);
+  speedReadingInterval = setInterval(() => {
+    if (!speedReadingPaused && speedReadingActive) {
+      speedReadingIndex++;
+      if (speedReadingIndex >= speedReadingWords.length) {
+        // Reached the end
+        stopSpeedReading();
+        return;
+      }
+      showCurrentWord();
+      updateSpeedReadingProgress();
+    }
+  }, intervalMs);
+}
+
+function showCurrentWord() {
+  const wordDisplay = document.getElementById('folio-speed-reader-word');
+  if (!wordDisplay || speedReadingIndex >= speedReadingWords.length) return;
+
+  const word = speedReadingWords[speedReadingIndex];
+
+  // Find the optimal recognition point (ORP) - typically around 1/3 into the word
+  // This helps the eye focus on the right spot for faster reading
+  const orpIndex = Math.min(
+    Math.max(0, Math.floor(word.length / 3)),
+    word.length - 1
+  );
+
+  // Build the word with focal point highlighted and positioned
+  const before = word.substring(0, orpIndex);
+  const focal = word.charAt(orpIndex);
+  const after = word.substring(orpIndex + 1);
+
+  // Use spans to keep the focal letter centered under the arrows
+  wordDisplay.innerHTML = `<span class="word-before">${before}</span><span class="focal">${focal}</span><span class="word-after">${after}</span>`;
+}
+
+function updateSpeedReadingProgress() {
+  const progressBar = document.getElementById('folio-speed-reader-progress-bar');
+  if (progressBar && speedReadingWords.length > 0) {
+    const percent = (speedReadingIndex / speedReadingWords.length) * 100;
+    progressBar.style.width = `${percent}%`;
+  }
+  updateSpeedReadingInfo();
+}
+
+function updateSpeedReadingInfo() {
+  const infoDisplay = document.getElementById('folio-speed-reader-info');
+  if (infoDisplay && speedReadingWords.length > 0) {
+    const wordsRemaining = speedReadingWords.length - speedReadingIndex;
+    const minutesRemaining = Math.ceil(wordsRemaining / speedReadingWPM);
+    infoDisplay.textContent = `${speedReadingIndex + 1} / ${speedReadingWords.length} words • ${minutesRemaining} min remaining`;
+  }
+}
+
+function seekSpeedReading(index) {
+  speedReadingIndex = Math.max(0, Math.min(index, speedReadingWords.length - 1));
+  showCurrentWord();
+  updateSpeedReadingProgress();
+}
+
+function changeSpeedReadingSpeed(wpm) {
+  speedReadingWPM = wpm;
+
+  const wpmLabel = document.getElementById('folio-speed-reader-wpm');
+  if (wpmLabel) {
+    wpmLabel.textContent = `${wpm} WPM`;
+  }
+
+  // Save to persistent storage
+  chrome.storage.local.set({ speedReadingWPM: wpm });
+
+  // Restart the interval with new speed
+  if (speedReadingActive && !speedReadingPaused) {
+    startSpeedReadingInterval();
+  }
+
+  updateSpeedReadingInfo();
 }
 
 function toggleFullscreen() {
@@ -2731,6 +3144,14 @@ function activateReaderMode() {
   epubBtn.onclick = exportToEPUB;
   nav.appendChild(epubBtn);
 
+  const speedReadBtn = document.createElement('button');
+  speedReadBtn.id = 'folio-speed-read-btn';
+  speedReadBtn.className = 'folio-fullscreen-btn';
+  speedReadBtn.textContent = '⚡';
+  speedReadBtn.title = 'Speed Read';
+  speedReadBtn.onclick = startSpeedReading;
+  nav.appendChild(speedReadBtn);
+
   const shuffleBtn = document.createElement('button');
   shuffleBtn.id = 'folio-shuffle-btn';
   shuffleBtn.className = 'folio-fullscreen-btn';
@@ -2824,6 +3245,106 @@ function activateReaderMode() {
 
   container.appendChild(lightbox);
 
+  // Create speed reader overlay
+  const speedReader = document.createElement('div');
+  speedReader.id = 'folio-speed-reader';
+  speedReader.className = 'folio-speed-reader';
+
+  // Focus markers
+  const focusMarker = document.createElement('div');
+  focusMarker.className = 'folio-speed-reader-focus';
+  speedReader.appendChild(focusMarker);
+
+  // Word display
+  const wordDisplay = document.createElement('div');
+  wordDisplay.id = 'folio-speed-reader-word';
+  wordDisplay.className = 'folio-speed-reader-word';
+  speedReader.appendChild(wordDisplay);
+
+  // Info display (word count, time remaining)
+  const infoDisplay = document.createElement('div');
+  infoDisplay.id = 'folio-speed-reader-info';
+  infoDisplay.className = 'folio-speed-reader-info';
+  speedReader.appendChild(infoDisplay);
+
+  // Close button
+  const speedCloseBtn = document.createElement('button');
+  speedCloseBtn.className = 'folio-speed-reader-close';
+  speedCloseBtn.textContent = '✕';
+  speedCloseBtn.title = 'Close (Esc)';
+  speedCloseBtn.onclick = stopSpeedReading;
+  speedReader.appendChild(speedCloseBtn);
+
+  // Controls
+  const speedControls = document.createElement('div');
+  speedControls.className = 'folio-speed-reader-controls';
+
+  // Rewind button
+  const rewindBtn = document.createElement('button');
+  rewindBtn.className = 'folio-speed-reader-btn';
+  rewindBtn.textContent = '⏮';
+  rewindBtn.title = 'Restart';
+  rewindBtn.onclick = () => seekSpeedReading(0);
+  speedControls.appendChild(rewindBtn);
+
+  // Back button
+  const backBtn = document.createElement('button');
+  backBtn.className = 'folio-speed-reader-btn';
+  backBtn.textContent = '◀';
+  backBtn.title = 'Back 10 words';
+  backBtn.onclick = () => seekSpeedReading(speedReadingIndex - 10);
+  speedControls.appendChild(backBtn);
+
+  // Play/Pause button
+  const playPauseBtn = document.createElement('button');
+  playPauseBtn.id = 'folio-speed-reader-play-pause';
+  playPauseBtn.className = 'folio-speed-reader-btn play-pause';
+  playPauseBtn.textContent = '⏸';
+  playPauseBtn.title = 'Pause (Space)';
+  playPauseBtn.onclick = toggleSpeedReadingPause;
+  speedControls.appendChild(playPauseBtn);
+
+  // Forward button
+  const forwardBtn = document.createElement('button');
+  forwardBtn.className = 'folio-speed-reader-btn';
+  forwardBtn.textContent = '▶';
+  forwardBtn.title = 'Forward 10 words';
+  forwardBtn.onclick = () => seekSpeedReading(speedReadingIndex + 10);
+  speedControls.appendChild(forwardBtn);
+
+  // Speed control
+  const speedControl = document.createElement('div');
+  speedControl.className = 'folio-speed-reader-speed';
+
+  const speedLabel = document.createElement('span');
+  speedLabel.id = 'folio-speed-reader-wpm';
+  speedLabel.textContent = '300 WPM';
+  speedControl.appendChild(speedLabel);
+
+  const speedSlider = document.createElement('input');
+  speedSlider.type = 'range';
+  speedSlider.id = 'folio-speed-reader-slider';
+  speedSlider.min = '100';
+  speedSlider.max = '800';
+  speedSlider.value = '300';
+  speedSlider.title = 'Words per minute';
+  speedSlider.oninput = (e) => changeSpeedReadingSpeed(parseInt(e.target.value));
+  speedControl.appendChild(speedSlider);
+
+  speedControls.appendChild(speedControl);
+  speedReader.appendChild(speedControls);
+
+  // Progress bar
+  const progressBar = document.createElement('div');
+  progressBar.className = 'folio-speed-reader-progress';
+  const progressFill = document.createElement('div');
+  progressFill.id = 'folio-speed-reader-progress-bar';
+  progressFill.className = 'folio-speed-reader-progress-bar';
+  progressBar.appendChild(progressFill);
+  speedReader.appendChild(progressBar);
+
+  container.appendChild(speedReader);
+
   document.body.innerHTML = '';
   document.body.appendChild(container);
   document.body.style.overflow = 'hidden';
@@ -2896,6 +3417,11 @@ function activateReaderMode() {
 function deactivateReaderMode() {
   if (!readerModeActive || !originalContent) return;
 
+  // Stop speed reading if active
+  if (speedReadingActive) {
+    stopSpeedReading();
+  }
+
   document.removeEventListener('keydown', handleKeyPress);
   document.removeEventListener('mousemove', handleMouseMove);
   window.removeEventListener('resize', handleResize);
@@ -2929,6 +3455,9 @@ function deactivateReaderMode() {
   allImages = [];
   currentLightboxIndex = 0;
   lastThemeIndex = -1;
+  speedReadingWords = [];
+  speedReadingIndex = 0;
+  speedReadingWPM = 300;
 }
 
 // Listen for export events when loaded in export.html
