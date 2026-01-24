@@ -76,12 +76,16 @@ function setupDragAndDrop() {
 }
 
 function setupButtons() {
-  // Article title clicks - open URL in new tab and activate reader mode
+  // Article title clicks - open URL in new tab, optionally activate reader mode
   document.querySelectorAll('.article-title').forEach(title => {
     title.addEventListener('click', async (e) => {
       const url = e.target.dataset.url;
       if (url) {
         const tab = await chrome.tabs.create({ url, active: true });
+
+        // Check if we should open in reader mode
+        const { collectionOpenReader = true } = await chrome.storage.local.get('collectionOpenReader');
+        if (!collectionOpenReader) return;
 
         // Wait for the page to fully load before activating reader mode
         const listener = (tabId, changeInfo, updatedTab) => {
@@ -266,6 +270,14 @@ async function loadSettings() {
   // Load collection as new tab setting
   const { collectionAsNewTab = false } = await chrome.storage.local.get('collectionAsNewTab');
   document.getElementById('collection-newtab').checked = collectionAsNewTab;
+
+  // Load collection open in reader setting (default true for existing behavior)
+  const { collectionOpenReader = true } = await chrome.storage.local.get('collectionOpenReader');
+  document.getElementById('collection-open-reader').checked = collectionOpenReader;
+
+  // Load links open in reader setting
+  const { linksOpenReader = false } = await chrome.storage.local.get('linksOpenReader');
+  document.getElementById('links-open-reader').checked = linksOpenReader;
 }
 
 async function loadAutoOpenDomains() {
@@ -616,6 +628,12 @@ document.getElementById('auto-fullscreen').addEventListener('change', async (e) 
 document.getElementById('collection-newtab').addEventListener('change', async (e) => {
   await chrome.storage.local.set({ collectionAsNewTab: e.target.checked });
 });
+document.getElementById('collection-open-reader').addEventListener('change', async (e) => {
+  await chrome.storage.local.set({ collectionOpenReader: e.target.checked });
+});
+document.getElementById('links-open-reader').addEventListener('change', async (e) => {
+  await chrome.storage.local.set({ linksOpenReader: e.target.checked });
+});
 
 // Listen for storage changes to update magazine in real-time
 chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -625,7 +643,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local' && changes.autoOpenDomains) {
     loadAutoOpenDomains();
   }
-  if (namespace === 'local' && (changes.autoFullscreen || changes.collectionAsNewTab)) {
+  if (namespace === 'local' && (changes.autoFullscreen || changes.collectionAsNewTab || changes.collectionOpenReader || changes.linksOpenReader)) {
     loadSettings();
   }
 });

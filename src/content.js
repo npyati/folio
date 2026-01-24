@@ -1859,6 +1859,30 @@ function addImageClickHandlers() {
   }
 }
 
+// Link click handler for opening links in reader mode
+function addLinkClickHandlers() {
+  const links = document.querySelectorAll('.folio-page-content a');
+
+  links.forEach(link => {
+    link.addEventListener('click', async (e) => {
+      const href = link.href;
+      if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+
+      // Check if setting is enabled
+      const { linksOpenReader = false } = await chrome.storage.local.get('linksOpenReader');
+      if (!linksOpenReader) return;
+
+      e.preventDefault();
+
+      // Store URL to auto-open in reader mode
+      await chrome.storage.local.set({ autoOpenReaderUrl: href });
+
+      // Navigate to the page
+      window.location.href = href;
+    });
+  });
+}
+
 // Speed Reading Functions
 function extractWordsFromArticle() {
   // Get the article content and add spaces around block elements before stripping HTML
@@ -3395,6 +3419,9 @@ function activateReaderMode() {
     // Add image click handlers
     addImageClickHandlers();
 
+    // Add link click handlers for opening in reader mode
+    addLinkClickHandlers();
+
     // Initially hide the nav
     setTimeout(() => {
       const nav = document.querySelector('.folio-nav');
@@ -3561,6 +3588,18 @@ document.addEventListener('contextmenu', (e) => {
 async function checkAutoOpen() {
   // Don't auto-open if already in reader mode
   if (readerModeActive) return;
+
+  // Check if we should auto-open from a link clicked in reader mode
+  const { autoOpenReaderUrl = null } = await chrome.storage.local.get('autoOpenReaderUrl');
+  if (autoOpenReaderUrl && autoOpenReaderUrl === window.location.href) {
+    // Clear the stored URL
+    await chrome.storage.local.remove('autoOpenReaderUrl');
+    console.log('Folio: Auto-opening reader mode from reader link');
+    setTimeout(() => {
+      activateReaderMode();
+    }, 500);
+    return;
+  }
 
   // Get current domain
   const currentDomain = window.location.hostname.replace(/^www\./, '');

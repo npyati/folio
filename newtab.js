@@ -34,6 +34,12 @@ async function loadSettings() {
 
   const { collectionAsNewTab = false } = await chrome.storage.local.get('collectionAsNewTab');
   document.getElementById('collection-newtab').checked = collectionAsNewTab;
+
+  const { collectionOpenReader = true } = await chrome.storage.local.get('collectionOpenReader');
+  document.getElementById('collection-open-reader').checked = collectionOpenReader;
+
+  const { linksOpenReader = false } = await chrome.storage.local.get('linksOpenReader');
+  document.getElementById('links-open-reader').checked = linksOpenReader;
 }
 
 // Load auto-open domains
@@ -198,12 +204,16 @@ function setupDragAndDrop() {
 }
 
 function setupButtons() {
-  // Article title clicks - open URL in new tab and activate reader mode
+  // Article title clicks - open URL in new tab, optionally activate reader mode
   document.querySelectorAll('.article-title').forEach(title => {
     title.addEventListener('click', async (e) => {
       const url = e.target.dataset.url;
       if (url) {
         const tab = await chrome.tabs.create({ url, active: true });
+
+        // Check if we should open in reader mode
+        const { collectionOpenReader = true } = await chrome.storage.local.get('collectionOpenReader');
+        if (!collectionOpenReader) return;
 
         const listener = (tabId, changeInfo) => {
           if (tabId === tab.id && changeInfo.status === 'complete') {
@@ -412,6 +422,12 @@ document.getElementById('auto-fullscreen').addEventListener('change', async (e) 
 document.getElementById('collection-newtab').addEventListener('change', async (e) => {
   await chrome.storage.local.set({ collectionAsNewTab: e.target.checked });
 });
+document.getElementById('collection-open-reader').addEventListener('change', async (e) => {
+  await chrome.storage.local.set({ collectionOpenReader: e.target.checked });
+});
+document.getElementById('links-open-reader').addEventListener('change', async (e) => {
+  await chrome.storage.local.set({ linksOpenReader: e.target.checked });
+});
 
 // Listen for storage changes
 chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -425,7 +441,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     if (changes.autoOpenDomains) {
       loadAutoOpenDomains();
     }
-    if (changes.autoFullscreen || changes.collectionAsNewTab) {
+    if (changes.autoFullscreen || changes.collectionAsNewTab || changes.collectionOpenReader || changes.linksOpenReader) {
       loadSettings();
     }
   }
