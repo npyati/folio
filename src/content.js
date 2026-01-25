@@ -676,8 +676,14 @@ const magazineCSS = `
     bottom: 0;
     left: 0;
     right: 0;
-    height: 4px;
+    height: 20px;
     background: rgba(128, 128, 128, 0.2);
+    cursor: pointer;
+    transition: height 0.2s ease;
+  }
+
+  .folio-speed-reader-progress:hover {
+    height: 28px;
   }
 
   .folio-speed-reader-progress-bar {
@@ -685,6 +691,66 @@ const magazineCSS = `
     background: var(--accent-color, #cc0000);
     width: 0%;
     transition: width 0.1s linear;
+    pointer-events: none;
+  }
+
+  .folio-speed-reader-context {
+    position: absolute;
+    top: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--text-color, #000000);
+    font-family: var(--body-font, 'Georgia', serif);
+    font-size: 14px;
+    opacity: 0.4;
+    max-width: 80%;
+    text-align: center;
+    line-height: 1.6;
+    pointer-events: none;
+  }
+
+  .folio-speed-reader-context .current-word {
+    opacity: 1;
+    font-weight: 600;
+  }
+
+  /* Custom context menu for reader mode */
+  .folio-context-menu {
+    position: fixed;
+    background: var(--bg-color, #ffffff);
+    border: 1px solid var(--text-color, #000000);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 2147483651;
+    min-width: 200px;
+    padding: 4px 0;
+    font-family: var(--body-font, 'Georgia', serif);
+    font-size: 14px;
+  }
+
+  .folio-context-menu-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    color: var(--text-color, #000000);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.15s ease;
+  }
+
+  .folio-context-menu-item:hover {
+    background: rgba(128, 128, 128, 0.15);
+  }
+
+  .folio-context-menu-item .icon {
+    font-size: 16px;
+    width: 20px;
+    text-align: center;
+  }
+
+  .folio-context-menu-divider {
+    height: 1px;
+    background: rgba(128, 128, 128, 0.3);
+    margin: 4px 0;
   }
 
   .folio-speed-reader-close {
@@ -2007,6 +2073,34 @@ function showCurrentWord() {
 
   // Use spans to keep the focal letter centered under the arrows
   wordDisplay.innerHTML = `<span class="word-before">${before}</span><span class="focal">${focal}</span><span class="word-after">${after}</span>`;
+
+  // Update context preview
+  updateContextPreview();
+}
+
+function updateContextPreview() {
+  const contextDisplay = document.getElementById('folio-speed-reader-context');
+  if (!contextDisplay || speedReadingWords.length === 0) return;
+
+  // Show 8 words before and 8 words after current position
+  const contextRange = 8;
+  const startIdx = Math.max(0, speedReadingIndex - contextRange);
+  const endIdx = Math.min(speedReadingWords.length, speedReadingIndex + contextRange + 1);
+
+  const contextWords = [];
+  for (let i = startIdx; i < endIdx; i++) {
+    if (i === speedReadingIndex) {
+      contextWords.push(`<span class="current-word">${speedReadingWords[i]}</span>`);
+    } else {
+      contextWords.push(speedReadingWords[i]);
+    }
+  }
+
+  // Add ellipsis indicators
+  const prefix = startIdx > 0 ? '... ' : '';
+  const suffix = endIdx < speedReadingWords.length ? ' ...' : '';
+
+  contextDisplay.innerHTML = prefix + contextWords.join(' ') + suffix;
 }
 
 function updateSpeedReadingProgress() {
@@ -2050,6 +2144,128 @@ function changeSpeedReadingSpeed(wpm) {
   }
 
   updateSpeedReadingInfo();
+}
+
+// Start speed reading from a specific word index
+async function startSpeedReadingFromIndex(index) {
+  speedReadingWords = extractWordsFromArticle();
+  if (speedReadingWords.length === 0) return;
+
+  // Load saved WPM setting
+  const { speedReadingWPM: savedWPM = 300 } = await chrome.storage.local.get('speedReadingWPM');
+  speedReadingWPM = savedWPM;
+
+  // Update slider and label
+  const slider = document.getElementById('folio-speed-reader-slider');
+  if (slider) slider.value = speedReadingWPM;
+  const wpmLabel = document.getElementById('folio-speed-reader-wpm');
+  if (wpmLabel) wpmLabel.textContent = `${speedReadingWPM} WPM`;
+
+  // Start from specified index
+  speedReadingIndex = Math.max(0, Math.min(index, speedReadingWords.length - 1));
+  speedReadingPaused = false;
+  speedReadingActive = true;
+
+  const speedReader = document.getElementById('folio-speed-reader');
+  if (speedReader) speedReader.classList.add('active');
+
+  updateSpeedReadingInfo();
+  showCurrentWord();
+  startSpeedReadingInterval();
+}
+
+// Find word index from selected text or clicked position
+function findWordIndexFromText(searchText) {
+  if (!searchText || searchText.trim().length === 0) return -1;
+
+  const words = extractWordsFromArticle();
+  const searchWords = searchText.trim().split(/\s+/);
+  const firstWord = searchWords[0].toLowerCase().replace(/[^\w]/g, '');
+
+  // Search for the first word match
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i].toLowerCase().replace(/[^\w]/g, '');
+    if (word === firstWord || word.startsWith(firstWord) || firstWord.startsWith(word)) {
+      // Verify subsequent words match if available
+      if (searchWords.length > 1) {
+        let matches = true;
+        for (let j = 1; j < Math.min(searchWords.length, 3); j++) {
+          if (i + j < words.length) {
+            const nextWord = words[i + j].toLowerCase().replace(/[^\w]/g, '');
+            const searchNext = searchWords[j].toLowerCase().replace(/[^\w]/g, '');
+            if (nextWord !== searchNext && !nextWord.startsWith(searchNext)) {
+              matches = false;
+              break;
+            }
+          }
+        }
+        if (matches) return i;
+      } else {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
+// Custom context menu for reader mode
+let contextMenu = null;
+
+function showContextMenu(x, y, selectedText) {
+  hideContextMenu();
+
+  contextMenu = document.createElement('div');
+  contextMenu.className = 'folio-context-menu';
+
+  // Adjust position to stay within viewport
+  const menuWidth = 220;
+  const menuHeight = 100;
+  if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
+  if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
+
+  contextMenu.style.left = `${x}px`;
+  contextMenu.style.top = `${y}px`;
+
+  // Speed read from here option
+  const speedReadItem = document.createElement('div');
+  speedReadItem.className = 'folio-context-menu-item';
+  speedReadItem.innerHTML = '<span class="icon">⚡</span><span>Speed read from here</span>';
+  speedReadItem.onclick = () => {
+    hideContextMenu();
+    const wordIndex = findWordIndexFromText(selectedText);
+    if (wordIndex >= 0) {
+      startSpeedReadingFromIndex(wordIndex);
+    } else {
+      startSpeedReading();
+    }
+  };
+  contextMenu.appendChild(speedReadItem);
+
+  // Add selection info if text is selected
+  if (selectedText && selectedText.length > 0) {
+    const previewText = selectedText.length > 30 ? selectedText.substring(0, 30) + '...' : selectedText;
+    const infoItem = document.createElement('div');
+    infoItem.className = 'folio-context-menu-item';
+    infoItem.style.opacity = '0.6';
+    infoItem.style.fontSize = '12px';
+    infoItem.style.cursor = 'default';
+    infoItem.innerHTML = `<span class="icon">📍</span><span>From: "${previewText}"</span>`;
+    contextMenu.appendChild(infoItem);
+  }
+
+  document.body.appendChild(contextMenu);
+
+  // Close on click outside
+  setTimeout(() => {
+    document.addEventListener('click', hideContextMenu, { once: true });
+  }, 0);
+}
+
+function hideContextMenu() {
+  if (contextMenu && contextMenu.parentNode) {
+    contextMenu.parentNode.removeChild(contextMenu);
+    contextMenu = null;
+  }
 }
 
 function toggleFullscreen() {
@@ -3291,6 +3507,12 @@ function activateReaderMode() {
   infoDisplay.className = 'folio-speed-reader-info';
   speedReader.appendChild(infoDisplay);
 
+  // Context preview (shows surrounding words)
+  const contextPreview = document.createElement('div');
+  contextPreview.id = 'folio-speed-reader-context';
+  contextPreview.className = 'folio-speed-reader-context';
+  speedReader.appendChild(contextPreview);
+
   // Close button
   const speedCloseBtn = document.createElement('button');
   speedCloseBtn.className = 'folio-speed-reader-close';
@@ -3358,13 +3580,41 @@ function activateReaderMode() {
   speedControls.appendChild(speedControl);
   speedReader.appendChild(speedControls);
 
-  // Progress bar
+  // Progress bar (clickable/draggable for seeking)
   const progressBar = document.createElement('div');
   progressBar.className = 'folio-speed-reader-progress';
+  progressBar.title = 'Click or drag to seek';
   const progressFill = document.createElement('div');
   progressFill.id = 'folio-speed-reader-progress-bar';
   progressFill.className = 'folio-speed-reader-progress-bar';
   progressBar.appendChild(progressFill);
+
+  // Progress bar seek handler
+  const seekFromProgressBar = (e) => {
+    if (!speedReadingWords.length) return;
+    const rect = progressBar.getBoundingClientRect();
+    const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const targetIndex = Math.floor(percent * speedReadingWords.length);
+    seekSpeedReading(targetIndex);
+  };
+
+  progressBar.addEventListener('click', seekFromProgressBar);
+
+  // Drag to seek
+  let isDraggingProgress = false;
+  progressBar.addEventListener('mousedown', (e) => {
+    isDraggingProgress = true;
+    seekFromProgressBar(e);
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (isDraggingProgress) {
+      seekFromProgressBar(e);
+    }
+  });
+  document.addEventListener('mouseup', () => {
+    isDraggingProgress = false;
+  });
+
   speedReader.appendChild(progressBar);
 
   container.appendChild(speedReader);
@@ -3577,10 +3827,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
-// Track right-clicked elements in reader mode
+// Track right-clicked elements and show custom context menu in reader mode
 document.addEventListener('contextmenu', (e) => {
   if (readerModeActive) {
     lastRightClickedElement = e.target;
+
+    // Don't show custom menu if clicking on interactive elements
+    const tagName = e.target.tagName.toLowerCase();
+    if (tagName === 'a' || tagName === 'img' || tagName === 'input' || tagName === 'button') {
+      return;
+    }
+
+    // Check if we're in the page content area
+    const pageContent = e.target.closest('.folio-page-content');
+    if (pageContent) {
+      e.preventDefault();
+      const selectedText = window.getSelection().toString() || e.target.textContent?.substring(0, 50) || '';
+      showContextMenu(e.clientX, e.clientY, selectedText);
+    }
   }
 });
 
