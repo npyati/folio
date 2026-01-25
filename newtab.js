@@ -1,3 +1,40 @@
+// Theme management
+async function loadTheme() {
+  const { collectionTheme = 'system' } = await chrome.storage.local.get('collectionTheme');
+  applyTheme(collectionTheme);
+  updateThemeButtons(collectionTheme);
+}
+
+function applyTheme(theme) {
+  let effectiveTheme = theme;
+
+  if (theme === 'system') {
+    effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+
+  document.documentElement.setAttribute('data-theme', effectiveTheme);
+}
+
+function updateThemeButtons(theme) {
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === theme);
+  });
+}
+
+async function setTheme(theme) {
+  await chrome.storage.local.set({ collectionTheme: theme });
+  applyTheme(theme);
+  updateThemeButtons(theme);
+}
+
+// Listen for system theme changes
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async () => {
+  const { collectionTheme = 'system' } = await chrome.storage.local.get('collectionTheme');
+  if (collectionTheme === 'system') {
+    applyTheme('system');
+  }
+});
+
 // Check setting and show appropriate view
 async function initNewTab() {
   const { collectionAsNewTab = false } = await chrome.storage.local.get('collectionAsNewTab');
@@ -48,7 +85,7 @@ async function loadAutoOpenDomains() {
   const listEl = document.getElementById('domain-list');
 
   if (autoOpenDomains.length === 0) {
-    listEl.innerHTML = '<div style="text-align: center; color: #999; font-size: 11px; padding: 20px;">No domains configured</div>';
+    listEl.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 11px; padding: 20px;">No domains configured</div>';
     return;
   }
 
@@ -411,6 +448,11 @@ document.getElementById('export-folio').addEventListener('click', exportFolio);
 document.getElementById('clear-all').addEventListener('click', clearAll);
 document.getElementById('settings-toggle').addEventListener('click', toggleSettings);
 document.getElementById('add-domain').addEventListener('click', addDomain);
+
+// Theme button listeners
+document.querySelectorAll('.theme-btn').forEach(btn => {
+  btn.addEventListener('click', () => setTheme(btn.dataset.theme));
+});
 document.getElementById('domain-input').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') {
     addDomain();
@@ -444,10 +486,14 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     if (changes.autoFullscreen || changes.collectionAsNewTab || changes.collectionOpenReader || changes.linksOpenReader) {
       loadSettings();
     }
+    if (changes.collectionTheme) {
+      loadTheme();
+    }
   }
 });
 
 // Initialize on load
+loadTheme();
 initNewTab();
 loadSettings();
 loadAutoOpenDomains();

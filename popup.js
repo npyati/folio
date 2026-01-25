@@ -1,3 +1,40 @@
+// Theme management
+async function loadTheme() {
+  const { collectionTheme = 'system' } = await chrome.storage.local.get('collectionTheme');
+  applyTheme(collectionTheme);
+  updateThemeButtons(collectionTheme);
+}
+
+function applyTheme(theme) {
+  let effectiveTheme = theme;
+
+  if (theme === 'system') {
+    effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+
+  document.documentElement.setAttribute('data-theme', effectiveTheme);
+}
+
+function updateThemeButtons(theme) {
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === theme);
+  });
+}
+
+async function setTheme(theme) {
+  await chrome.storage.local.set({ collectionTheme: theme });
+  applyTheme(theme);
+  updateThemeButtons(theme);
+}
+
+// Listen for system theme changes
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async () => {
+  const { collectionTheme = 'system' } = await chrome.storage.local.get('collectionTheme');
+  if (collectionTheme === 'system') {
+    applyTheme('system');
+  }
+});
+
 // Load and display saved articles
 async function loadArticles() {
   const { magazine = [] } = await chrome.storage.local.get('magazine');
@@ -285,7 +322,7 @@ async function loadAutoOpenDomains() {
   const listEl = document.getElementById('domain-list');
 
   if (autoOpenDomains.length === 0) {
-    listEl.innerHTML = '<div style="text-align: center; color: #999; font-size: 11px; padding: 20px;">No domains configured</div>';
+    listEl.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 11px; padding: 20px;">No domains configured</div>';
     return;
   }
 
@@ -635,6 +672,11 @@ document.getElementById('links-open-reader').addEventListener('change', async (e
   await chrome.storage.local.set({ linksOpenReader: e.target.checked });
 });
 
+// Theme button listeners
+document.querySelectorAll('.theme-btn').forEach(btn => {
+  btn.addEventListener('click', () => setTheme(btn.dataset.theme));
+});
+
 // Listen for storage changes to update magazine in real-time
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local' && changes.magazine) {
@@ -646,9 +688,13 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local' && (changes.autoFullscreen || changes.collectionAsNewTab || changes.collectionOpenReader || changes.linksOpenReader)) {
     loadSettings();
   }
+  if (namespace === 'local' && changes.collectionTheme) {
+    loadTheme();
+  }
 });
 
 // Load articles and settings on popup open
+loadTheme();
 loadArticles();
 loadAutoOpenDomains();
 loadSettings();
