@@ -336,7 +336,7 @@ const magazineCSS = `
     margin: 0.05em 0.08em 0 0;
     font-weight: 400;
     font-family: 'Libre Caslon Text', Georgia, serif;
-    color: #000000;
+    color: var(--text-color, #000000);
   }
 
   .folio-page-content h2 {
@@ -344,7 +344,7 @@ const magazineCSS = `
     font-size: 1.6em;
     font-weight: 700;
     margin: 1.0em 0 0.6em 0;
-    color: #1a1a1a;
+    color: var(--text-color, #1a1a1a);
     letter-spacing: -0.01em;
   }
 
@@ -353,7 +353,7 @@ const magazineCSS = `
     font-size: 1.25em;
     font-weight: 600;
     margin: 0.8em 0 0.5em 0;
-    color: #1a1a1a;
+    color: var(--text-color, #1a1a1a);
     font-style: italic;
     letter-spacing: -0.005em;
   }
