@@ -1643,11 +1643,12 @@ function handleKeyPress(e) {
       e.preventDefault();
       goToPage(totalPages - 1);
       break;
-    case 'f':
-    case 'F':
-      e.preventDefault();
-      toggleFullscreen();
-      break;
+    // Disabled: interferes with browser find (Ctrl/Cmd+F)
+    // case 'f':
+    // case 'F':
+    //   e.preventDefault();
+    //   toggleFullscreen();
+    //   break;
     case 'Escape':
       e.preventDefault();
       deactivateReaderMode();
