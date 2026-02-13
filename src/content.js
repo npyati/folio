@@ -3635,6 +3635,32 @@ function activateReaderMode() {
   window.addEventListener('resize', handleResize);
   document.addEventListener('fullscreenchange', handleFullscreenChange);
 
+  // Pinch-to-zoom adjusts text size (trackpad pinch reports as ctrl+wheel)
+  let pinchDelta = 0;
+  let pinchTimeout = null;
+  document.addEventListener('wheel', (e) => {
+    if (!readerModeActive || !e.ctrlKey) return;
+    e.preventDefault();
+    pinchDelta += -e.deltaY;
+    if (!pinchTimeout) {
+      pinchTimeout = setTimeout(() => {
+        if (Math.abs(pinchDelta) > 20) {
+          changeFontSize(pinchDelta > 0 ? 0.05 : -0.05);
+        }
+        pinchDelta = 0;
+        pinchTimeout = null;
+      }, 50);
+    }
+  }, { passive: false });
+
+  // Safari gesture events
+  document.addEventListener('gesturechange', (e) => {
+    if (!readerModeActive) return;
+    e.preventDefault();
+    const delta = e.scale > 1 ? 0.05 : -0.05;
+    changeFontSize(delta);
+  }, { passive: false });
+
   // Store article content with header prepended
   articleContent = headerHTML + article.content;
 
