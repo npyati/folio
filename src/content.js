@@ -1137,10 +1137,20 @@ const magazineCSS = `
       margin: 0.5in 0.4in;
     }
 
+    /* Force light mode for print */
+    #folio-reader-container {
+      --bg-color: #ffffff !important;
+      --text-color: #1a1a1a !important;
+      --title-color: #2C5F6F !important;
+      --byline-color: #666666 !important;
+      --excerpt-color: #444444 !important;
+      --border-style: 1px solid #e0e0e0 !important;
+    }
+
     html, body {
       margin: 0;
       padding: 0;
-      background: var(--bg-color);
+      background: #ffffff;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -1148,7 +1158,7 @@ const magazineCSS = `
     #folio-reader-container {
       position: static;
       overflow: visible;
-      background: var(--bg-color);
+      background: #ffffff;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
       min-height: 100vh;
@@ -1159,7 +1169,7 @@ const magazineCSS = `
       width: 100%;
       max-width: 100% !important;
       height: auto;
-      background: var(--bg-color);
+      background: #ffffff;
     }
 
     .folio-pages-wrapper {
@@ -1181,11 +1191,14 @@ const magazineCSS = `
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
       color: var(--text-color);
+      font-size: var(--print-font-size, 1.05em) !important;
+      line-height: var(--print-line-height, 1.58) !important;
     }
 
     .folio-page-content > * {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+      line-height: inherit !important;
     }
 
     .folio-article-title {
@@ -1440,10 +1453,11 @@ function splitContentIntoPages(content, container) {
   contentParser.innerHTML = content;
   const allElements = Array.from(contentParser.querySelectorAll('h1, h2, h3, p, blockquote, ul, ol, img, div.folio-article-byline, div.folio-article-excerpt'));
 
-  // Filter out <p> elements that are inside <blockquote> to avoid duplicates
+  // Skip elements that are nested inside another selected container (list or blockquote).
+  // The parent's outerHTML already includes them, so re-emitting them produces duplicates.
   const elements = allElements.filter(el => {
-    if (el.tagName === 'P' && el.closest('blockquote')) {
-      return false; // Skip paragraphs inside blockquotes
+    if (el.parentElement && el.parentElement.closest('ul, ol, blockquote')) {
+      return false;
     }
     return true;
   });
@@ -2362,35 +2376,93 @@ function disableCursorAutoHide() {
   // For simplicity, we'll just ensure cursor is visible
 }
 
-function exportToPDF() {
+async function exportToPDF() {
   if (!readerModeActive) return;
 
   const container = document.getElementById('folio-reader-container');
   if (!container) return;
 
+  // Load saved print settings or use defaults
+  const { printSettings = {} } = await chrome.storage.local.get('printSettings');
+  let printCols = printSettings.columns || 3;
+  let printFontSize = printSettings.fontSize || 1.05;
+  let printLineHeight = printSettings.lineHeight || 1.58;
+
+  // Show print settings dialog
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999999;display:flex;align-items:center;justify-content:center;';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background:#fff;color:#333;border-radius:12px;padding:28px 32px;min-width:300px;font-family:-apple-system,system-ui,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,0.3);';
+  dialog.innerHTML = `
+    <div style="font-size:1.1em;font-weight:600;margin-bottom:18px;">PDF Layout Settings</div>
+    <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <span>Columns</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button data-action="cols-" style="width:28px;height:28px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:1.1em;">−</button>
+        <span id="folio-print-cols" style="min-width:20px;text-align:center;">${printCols}</span>
+        <button data-action="cols+" style="width:28px;height:28px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:1.1em;">+</button>
+      </div>
+    </label>
+    <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <span>Font Size</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button data-action="font-" style="width:28px;height:28px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:1.1em;">−</button>
+        <span id="folio-print-font" style="min-width:36px;text-align:center;">${printFontSize.toFixed(2)}</span>
+        <button data-action="font+" style="width:28px;height:28px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:1.1em;">+</button>
+      </div>
+    </label>
+    <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <span>Line Height</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button data-action="lh-" style="width:28px;height:28px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:1.1em;">−</button>
+        <span id="folio-print-lh" style="min-width:36px;text-align:center;">${printLineHeight.toFixed(2)}</span>
+        <button data-action="lh+" style="width:28px;height:28px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer;font-size:1.1em;">+</button>
+      </div>
+    </label>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button id="folio-print-cancel" style="padding:8px 18px;border:1px solid #ccc;border-radius:8px;background:#f5f5f5;cursor:pointer;">Cancel</button>
+      <button id="folio-print-go" style="padding:8px 18px;border:none;border-radius:8px;background:#2C5F6F;color:#fff;cursor:pointer;font-weight:500;">Print</button>
+    </div>
+  `;
+  overlay.appendChild(dialog);
+  container.appendChild(overlay);
+
+  // Handle +/- buttons
+  dialog.addEventListener('click', (e) => {
+    const action = e.target.dataset.action;
+    if (!action) return;
+    if (action === 'cols-') printCols = Math.max(1, printCols - 1);
+    if (action === 'cols+') printCols = Math.min(6, printCols + 1);
+    if (action === 'font-') printFontSize = Math.max(0.7, +(printFontSize - 0.05).toFixed(2));
+    if (action === 'font+') printFontSize = Math.min(1.8, +(printFontSize + 0.05).toFixed(2));
+    if (action === 'lh-') printLineHeight = Math.max(1.0, +(printLineHeight - 0.1).toFixed(2));
+    if (action === 'lh+') printLineHeight = Math.min(2.5, +(printLineHeight + 0.1).toFixed(2));
+    document.getElementById('folio-print-cols').textContent = printCols;
+    document.getElementById('folio-print-font').textContent = printFontSize.toFixed(2);
+    document.getElementById('folio-print-lh').textContent = printLineHeight.toFixed(2);
+  });
+
+  // Wait for user choice
+  const proceed = await new Promise((resolve) => {
+    document.getElementById('folio-print-cancel').onclick = () => resolve(false);
+    document.getElementById('folio-print-go').onclick = () => resolve(true);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) resolve(false); });
+  });
+
+  overlay.remove();
+  if (!proceed) return;
+
+  // Save settings for next time
+  await chrome.storage.local.set({ printSettings: { columns: printCols, fontSize: printFontSize, lineHeight: printLineHeight } });
+
+  // Apply print layout settings as CSS custom properties
+  container.style.setProperty('--print-columns', printCols);
+  container.style.setProperty('--print-font-size', `${printFontSize}em`);
+  container.style.setProperty('--print-line-height', printLineHeight);
+
   // Store current active page
   const previousPage = currentPage;
-
-  // Calculate current column width to preserve it in print
-  const pageContent = document.querySelector('.folio-page-content');
-  if (pageContent) {
-    const currentWidth = pageContent.offsetWidth;
-    const gapSpace = (columnCount - 1) * columnGap;
-    const columnWidth = (currentWidth - gapSpace) / columnCount;
-
-    // Adjusted for wider screens to maintain ~3:4 ratio
-    const printPageWidth = 1300;
-    const printGapSpace = columnGap;
-
-    // Calculate how many columns of this width fit on print page
-    const printColumns = Math.max(1, Math.floor((printPageWidth + printGapSpace) / (columnWidth + printGapSpace)));
-
-    console.log(`Column width: ${columnWidth.toFixed(0)}px, Print columns: ${printColumns}`);
-    container.style.setProperty('--print-columns', printColumns);
-  } else {
-    // Fallback to 2 columns if we can't measure
-    container.style.setProperty('--print-columns', 2);
-  }
 
   // Make all pages visible for printing
   const allPages = document.querySelectorAll('.folio-page');
@@ -2408,10 +2480,7 @@ function exportToPDF() {
   window.print();
 
   // Restore state after print dialog closes
-  // Note: There's no reliable cross-browser way to detect when print dialog closes,
-  // but we can restore immediately as the print styles only apply during actual printing
   setTimeout(() => {
-    // Restore only the previously active page
     allPages.forEach((page, index) => {
       if (index === previousPage) {
         page.classList.add('active');
@@ -2420,7 +2489,6 @@ function exportToPDF() {
       }
     });
 
-    // Show navigation again
     if (nav) {
       nav.style.display = '';
     }
@@ -2466,13 +2534,9 @@ function cleanHTMLForXHTML(html) {
 }
 
 // Export magazine collection as PDF
-async function exportMagazinePDF() {
-  const { magazine = [] } = await chrome.storage.local.get('magazine');
-
-  if (magazine.length === 0) {
-    alert('No articles in collection to export');
-    return;
-  }
+async function exportMagazinePDF(articleIds) {
+  const articles = await resolveExportArticles(articleIds);
+  if (!articles) return;
 
   // Store original body content
   const originalBodyHTML = document.body.innerHTML;
@@ -2480,7 +2544,7 @@ async function exportMagazinePDF() {
 
   // Combine all articles with proper formatting
   let combinedContent = '';
-  magazine.forEach((article) => {
+  articles.forEach((article) => {
     combinedContent += `
       <div class="folio-article-byline">${escapeXML(article.source)}</div>
       <h1 class="folio-article-title">${escapeXML(article.title)}</h1>
@@ -2549,14 +2613,34 @@ async function exportMagazinePDF() {
   }, 800);
 }
 
-// Export magazine collection as EPUB
-async function exportMagazineEPUB() {
-  const { magazine = [] } = await chrome.storage.local.get('magazine');
-
-  if (magazine.length === 0) {
-    alert('No articles in collection to export');
-    return;
+// Resolve article IDs to article objects via folioStore, with legacy fallback.
+async function resolveExportArticles(articleIds) {
+  const data = await chrome.storage.local.get(['folioStore', 'magazine']);
+  let articles = [];
+  if (data.folioStore && data.folioStore.articles) {
+    if (Array.isArray(articleIds) && articleIds.length > 0) {
+      articles = articleIds.map((id) => data.folioStore.articles[id]).filter(Boolean);
+    } else {
+      const activeList = (data.folioStore.lists || []).find((l) => l.id === data.folioStore.activeListId)
+        || (data.folioStore.lists || [])[0];
+      if (activeList) {
+        articles = activeList.articleIds.map((id) => data.folioStore.articles[id]).filter(Boolean);
+      }
+    }
+  } else if (Array.isArray(data.magazine)) {
+    articles = data.magazine;
   }
+  if (articles.length === 0) {
+    alert('No articles to export');
+    return null;
+  }
+  return articles;
+}
+
+// Export magazine collection as EPUB
+async function exportMagazineEPUB(articleIds) {
+  const articles = await resolveExportArticles(articleIds);
+  if (!articles) return;
 
   const zip = new JSZip();
 
@@ -2594,8 +2678,8 @@ async function exportMagazineEPUB() {
   let imageIndex = 0;
   let combinedContent = '';
 
-  for (let i = 0; i < magazine.length; i++) {
-    const article = magazine[i];
+  for (let i = 0; i < articles.length; i++) {
+    const article = articles[i];
     const articleId = `article-${i}`;
 
     // Create TOC entry
@@ -3844,11 +3928,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else {
       sendResponse({ success: false, message: 'Could not parse article' });
     }
+  } else if (request.action === 'exportPagePDF') {
+    // Enter reader mode if not active, then export as PDF
+    if (!readerModeActive) {
+      activateReaderMode();
+    }
+    if (readerModeActive) {
+      // Wait for reader mode to fully render (pagination + theme)
+      const waitForPages = () => {
+        if (document.querySelector('.folio-page-content')) {
+          exportToPDF();
+        } else {
+          setTimeout(waitForPages, 200);
+        }
+      };
+      setTimeout(waitForPages, 500);
+    }
+    sendResponse({ success: true });
+  } else if (request.action === 'exportPageEPUB') {
+    // Enter reader mode if not active, then export as EPUB
+    if (!readerModeActive) {
+      activateReaderMode();
+    }
+    if (readerModeActive) {
+      const waitForPages = () => {
+        if (document.querySelector('.folio-page-content')) {
+          exportToEPUB();
+        } else {
+          setTimeout(waitForPages, 200);
+        }
+      };
+      setTimeout(waitForPages, 500);
+    }
+    sendResponse({ success: true });
   } else if (request.action === 'exportMagazinePDF') {
-    exportMagazinePDF();
+    exportMagazinePDF(request.articleIds || null);
     sendResponse({ success: true });
   } else if (request.action === 'exportMagazineEPUB') {
-    exportMagazineEPUB();
+    exportMagazineEPUB(request.articleIds || null);
     sendResponse({ success: true });
   }
   return true;

@@ -21,6 +21,7 @@
       --btn-text: #333333;
       --scrollbar-thumb: rgba(0, 0, 0, 0.15);
       --drag-over-bg: #f0f0ff;
+      --overlay-bg: rgba(0, 0, 0, 0.8);
     }
 
     [data-theme="dark"] {
@@ -40,11 +41,10 @@
       --btn-text: #e0e0e0;
       --scrollbar-thumb: rgba(255, 255, 255, 0.2);
       --drag-over-bg: #2a2a3a;
+      --overlay-bg: rgba(0, 0, 0, 0.9);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       width: 100%;
@@ -58,7 +58,6 @@
       flex-direction: column;
     }
 
-    /* Disabled state styles */
     .disabled-container {
       display: flex;
       flex-direction: column;
@@ -104,20 +103,15 @@
       letter-spacing: 0.5px;
     }
 
-    .enable-btn:hover {
-      opacity: 0.8;
-    }
+    .enable-btn:hover { opacity: 0.8; }
 
-    /* Collection view styles */
     .collection-container {
       display: none;
       flex-direction: column;
       min-height: 100vh;
     }
 
-    .collection-container.active {
-      display: flex;
-    }
+    .collection-container.active { display: flex; }
 
     .header {
       background: var(--bg-primary);
@@ -139,7 +133,7 @@
     }
 
     h1 {
-      margin: 0 0 6px 0;
+      margin: 0 0 10px 0;
       font-size: 28px;
       font-weight: 400;
       font-family: 'Georgia', 'Times New Roman', serif;
@@ -147,13 +141,124 @@
       letter-spacing: 0.5px;
     }
 
-    .subtitle {
-      margin: 0;
-      font-size: 11px;
-      color: var(--text-secondary);
-      font-weight: 400;
+    .list-switcher-row {
+      display: flex;
+      justify-content: center;
+    }
+
+    .list-switcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: transparent;
+      border: 1px solid var(--border-secondary);
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text-primary);
+      font-weight: 500;
       text-transform: uppercase;
-      letter-spacing: 0.8px;
+      letter-spacing: 0.6px;
+      max-width: 320px;
+    }
+
+    .list-switcher:hover {
+      border-color: var(--border-primary);
+      background: transparent;
+      color: var(--text-primary);
+    }
+
+    .list-switcher .list-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 220px;
+    }
+
+    .list-switcher .list-count {
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-left: 4px;
+    }
+
+    .list-switcher .chevron {
+      font-size: 10px;
+      opacity: 0.7;
+    }
+
+    .list-dropdown {
+      position: absolute;
+      top: calc(100% - 2px);
+      left: 50%;
+      transform: translateX(-50%);
+      min-width: 240px;
+      max-width: 320px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-primary);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 100;
+      display: none;
+      padding: 4px 0;
+      text-align: left;
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .list-dropdown.active { display: block; }
+
+    .list-dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .list-dropdown-item:hover { background: var(--bg-tertiary); }
+
+    .list-dropdown-item .check {
+      width: 14px;
+      flex-shrink: 0;
+      text-align: center;
+      opacity: 0;
+    }
+
+    .list-dropdown-item.active .check { opacity: 1; }
+
+    .list-dropdown-item .name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .list-dropdown-item .count {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .list-dropdown-divider {
+      height: 1px;
+      background: var(--border-light);
+      margin: 4px 0;
+    }
+
+    .list-dropdown-action {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .list-dropdown-action:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
     }
 
     .main-content {
@@ -171,14 +276,8 @@
       max-width: 560px;
     }
 
-    #articles-list::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    #articles-list::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
+    #articles-list::-webkit-scrollbar { width: 8px; }
+    #articles-list::-webkit-scrollbar-track { background: transparent; }
     #articles-list::-webkit-scrollbar-thumb {
       background: var(--scrollbar-thumb);
       border-radius: 4px;
@@ -192,11 +291,53 @@
       margin-bottom: 12px;
       cursor: move;
       transition: all 0.15s ease;
+      position: relative;
     }
 
     .article-item:hover {
       border-color: var(--border-primary);
       background: var(--bg-primary);
+    }
+
+    .article-item.selected {
+      border-color: var(--accent-color);
+      background: color-mix(in srgb, var(--accent-color) 5%, var(--bg-primary));
+    }
+
+    .article-select {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: var(--accent-color);
+      margin: 0;
+      flex-shrink: 0;
+    }
+
+    .article-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .article-header .article-select { margin-top: 2px; }
+
+    .export-badges {
+      display: flex;
+      gap: 4px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .export-badge {
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 2px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      background: var(--bg-tertiary);
+      color: var(--text-muted);
+      border: 1px solid var(--border-secondary);
     }
 
     .article-title {
@@ -241,7 +382,10 @@
       gap: 8px;
       padding-top: 12px;
       border-top: 1px solid var(--border-light);
+      position: relative;
     }
+
+    .article-actions .spacer { flex: 1; }
 
     button {
       padding: 6px 14px;
@@ -277,6 +421,56 @@
       font-size: 11px;
     }
 
+    .btn-lists { position: relative; }
+
+    .article-lists-popover {
+      position: absolute;
+      bottom: calc(100% + 4px);
+      right: 0;
+      min-width: 200px;
+      max-width: 260px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-primary);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 50;
+      padding: 6px 0;
+    }
+
+    .article-lists-popover .popover-header {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      padding: 4px 12px 8px;
+    }
+
+    .article-lists-popover .popover-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text-primary);
+    }
+
+    .article-lists-popover .popover-item:hover { background: var(--bg-tertiary); }
+
+    .article-lists-popover input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+      accent-color: var(--accent-color);
+    }
+
+    .article-lists-popover .popover-item .name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .actions {
       display: flex;
       gap: 8px;
@@ -307,9 +501,7 @@
       border: 1px solid var(--border-primary);
     }
 
-    .btn-primary:hover {
-      opacity: 0.8;
-    }
+    .btn-primary:hover { opacity: 0.8; }
 
     .btn-danger {
       background: var(--btn-bg);
@@ -376,9 +568,7 @@
       justify-content: center;
     }
 
-    .settings-panel.active {
-      display: flex;
-    }
+    .settings-panel.active { display: flex; }
 
     .settings-inner {
       max-width: 560px;
@@ -459,6 +649,119 @@
       border-color: var(--danger-color);
     }
 
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--overlay-bg);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+
+    .modal-overlay.active { display: flex; }
+
+    .modal-panel {
+      background: var(--bg-primary);
+      border: 2px solid var(--border-primary);
+      padding: 24px;
+      max-width: 420px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .modal-title {
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 0 0 16px 0;
+      color: var(--text-primary);
+    }
+
+    .lists-manage-items {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .list-manage-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-secondary);
+    }
+
+    .list-manage-row.dragging { opacity: 0.5; }
+
+    .list-manage-row .drag-handle {
+      cursor: grab;
+      color: var(--text-muted);
+      font-size: 14px;
+      user-select: none;
+    }
+
+    .list-manage-row input.list-name-input {
+      flex: 1;
+      padding: 6px 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .list-manage-row input.list-name-input:focus {
+      outline: none;
+      background: var(--bg-primary);
+      border-color: var(--border-tertiary);
+    }
+
+    .list-manage-row .count {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .list-manage-row .delete-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      color: var(--danger-color);
+      background: transparent;
+      border: 1px solid var(--border-tertiary);
+    }
+
+    .list-manage-row .delete-btn:disabled { opacity: 0.3; }
+
+    .list-manage-row .delete-btn:hover:not(:disabled) {
+      background: var(--danger-color);
+      color: var(--bg-primary);
+      border-color: var(--danger-color);
+    }
+
+    .new-list-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .new-list-row input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid var(--border-tertiary);
+      font-size: 12px;
+      font-family: inherit;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+    }
+
     #articles-list.drag-over {
       background: var(--drag-over-bg);
       border: 2px dashed var(--border-primary);
@@ -498,40 +801,15 @@
       border-color: var(--border-primary);
     }
 
-    /* Responsive adjustments */
     @media (max-width: 600px) {
-      .header {
-        padding: 16px 12px;
-      }
-
-      .header-content {
-        padding: 0 8px;
-      }
-
-      h1 {
-        font-size: 24px;
-      }
-
-      #articles-list {
-        padding: 16px 12px;
-      }
-
-      .article-item {
-        padding: 12px;
-      }
-
-      .actions {
-        padding: 12px;
-      }
-
-      .actions-inner {
-        padding: 0 8px;
-      }
-
-      .btn-primary {
-        padding: 10px 12px;
-        font-size: 10px;
-      }
+      .header { padding: 16px 12px; }
+      .header-content { padding: 0 8px; }
+      h1 { font-size: 24px; }
+      #articles-list { padding: 16px 12px; }
+      .article-item { padding: 12px; }
+      .actions { padding: 12px; }
+      .actions-inner { padding: 0 8px; }
+      .btn-primary { padding: 10px 12px; font-size: 10px; }
     }
   </style>
 </head>
@@ -546,12 +824,32 @@
     <button class="enable-btn" id="enable-newtab">Enable Collection View</button>
   </div>
 
+  <!-- Manage lists modal -->
+  <div class="modal-overlay" id="manage-lists-modal">
+    <div class="modal-panel">
+      <h3 class="modal-title">Manage Lists</h3>
+      <div class="lists-manage-items" id="lists-manage-items"></div>
+      <div class="new-list-row">
+        <input type="text" id="new-list-input" placeholder="New list name" maxlength="60">
+        <button id="new-list-add">Add</button>
+      </div>
+      <button id="manage-lists-done" class="btn-primary" style="width:100%">Done</button>
+    </div>
+  </div>
+
   <!-- Collection view -->
   <div class="collection-container" id="collection-view">
     <div class="header">
       <div class="header-content">
         <h1>folio</h1>
-        <div class="subtitle" id="article-count">No articles saved</div>
+        <div class="list-switcher-row">
+          <button class="list-switcher" id="list-switcher" type="button">
+            <span class="list-name" id="current-list-name">Reading List</span>
+            <span class="chevron">▾</span>
+            <span class="list-count" id="article-count">0</span>
+          </button>
+        </div>
+        <div class="list-dropdown" id="list-dropdown"></div>
         <button class="settings-toggle" id="settings-toggle" title="Settings">&#9881;</button>
       </div>
     </div>
@@ -599,9 +897,9 @@
           </label>
         </div>
 
-        <div class="settings-title" style="margin-top: 20px;">Export Collection</div>
+        <div class="settings-title" style="margin-top: 20px;">Export Current List</div>
         <div class="settings-description">
-          Download your reading list as a .folio file
+          Download the active list as a .folio file
         </div>
         <button id="export-folio" class="btn-primary" style="width: 100%; margin-bottom: 20px;">Export .folio</button>
 
@@ -630,6 +928,7 @@
     </div>
   </div>
 
+  <script src="folio-store.js"></script>
   <script src="newtab.js"></script>
 </body>
 </html>

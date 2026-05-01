@@ -1,9 +1,26 @@
+importScripts('folio-store.js');
+
 // Create context menus on installation
 chrome.runtime.onInstalled.addListener(() => {
+  // Clear any stale menus before recreating
+  chrome.contextMenus.removeAll();
+
   // Extension icon context menu items (right-click on extension icon)
   chrome.contextMenus.create({
     id: 'folio-action-add',
     title: 'Add to Collection',
+    contexts: ['action']
+  });
+
+  chrome.contextMenus.create({
+    id: 'folio-action-pdf',
+    title: 'Save as PDF',
+    contexts: ['action']
+  });
+
+  chrome.contextMenus.create({
+    id: 'folio-action-epub',
+    title: 'Save as EPUB',
     contexts: ['action']
   });
 
@@ -32,6 +49,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'folio-action-add') {
     // Add current page to collection (from extension icon right-click)
     await addToCollection(tab);
+  } else if (info.menuItemId === 'folio-action-pdf') {
+    // Export current page directly as PDF
+    await exportPageAs(tab, 'pdf');
+  } else if (info.menuItemId === 'folio-action-epub') {
+    // Export current page directly as EPUB
+    await exportPageAs(tab, 'epub');
   } else if (info.menuItemId === 'folio-action-organizer') {
     // Open Collection side panel
     await openCollection();
@@ -76,15 +99,8 @@ async function addToCollection(tab) {
     });
 
     if (response && response.article) {
-      // Get existing collection
-      const { magazine: collection = [] } = await chrome.storage.local.get('magazine');
-
-      // Add new article
-      collection.push(response.article);
-
-      // Save to storage
-      await chrome.storage.local.set({ magazine: collection });
-
+      const store = await FolioStore.loadStore();
+      await FolioStore.addArticleToList(store.activeListId, response.article);
       console.log('Article added to collection:', response.article.title);
     }
   } catch (error) {
@@ -120,15 +136,8 @@ async function addLinkToCollection(linkUrl) {
     });
 
     if (response && response.article) {
-      // Get existing collection
-      const { magazine: collection = [] } = await chrome.storage.local.get('magazine');
-
-      // Add new article
-      collection.push(response.article);
-
-      // Save to storage
-      await chrome.storage.local.set({ magazine: collection });
-
+      const store = await FolioStore.loadStore();
+      await FolioStore.addArticleToList(store.activeListId, response.article);
       console.log('Link added to collection:', response.article.title);
     }
 
@@ -166,6 +175,22 @@ async function openCollection() {
     } catch (fallbackError) {
       console.error('Fallback also failed:', fallbackError);
     }
+  }
+}
+
+// Export current page directly as PDF or EPUB (enters reader mode first if needed)
+async function exportPageAs(tab, format) {
+  if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+    console.log('Folio Reader: Cannot run on chrome:// pages');
+    return;
+  }
+
+  try {
+    await chrome.tabs.sendMessage(tab.id, {
+      action: format === 'pdf' ? 'exportPagePDF' : 'exportPageEPUB'
+    });
+  } catch (error) {
+    console.error(`Error exporting as ${format}:`, error);
   }
 }
 
